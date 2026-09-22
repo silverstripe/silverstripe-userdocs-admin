@@ -1,0 +1,4 @@
+{
+    "name": "test/renamed-module",
+    "type": "silverstripe-vendormodule"
+}

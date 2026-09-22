@@ -1,0 +1,44 @@
+---
+Name: userdocs-injector
+---
+SilverStripe\Core\Injector\Injector:
+  Psr\SimpleCache\CacheInterface.userdocsmanifest:
+    factory: 'SilverStripe\Core\Cache\CacheFactory'
+    constructor:
+      namespace: 'userdocsmanifest'
+  # Commonmark markdown converter injection config
+  League\CommonMark\Environment\Environment.userdocs:
+    type: prototype
+    factory: 'SilverStripe\UserDocs\Markdown\MarkdownEnvironmentFactory'
+    constructor:
+      config:
+        allow_unsafe_links: false
+        attributes:
+          allow:
+            - 'id'
+        alert:
+          icons:
+            active: true
+        heading_permalink:
+          apply_id_to_heading: true
+          aria_hidden: false
+          id_prefix: 'userdocs'
+          fragment_prefix: 'userdocs'
+          insert: 'after'
+          symbol: '#'
+        table_of_contents:
+          min_heading_level: 2
+          placeholder: '[TABLE_OF_CONTENTS]'
+          position: 'placeholder'
+      extensions:
+        CommonMarkCoreExtension: '%$League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension'
+        FrontMatterExtension: '%$League\CommonMark\Extension\FrontMatter\FrontMatterExtension'
+        GithubFlavoredMarkdownExtension: '%$League\CommonMark\Extension\GithubFlavoredMarkdownExtension'
+        AttributesExtension: '%$League\CommonMark\Extension\Attributes\AttributesExtension'
+        HeadingPermalinkExtension: '%$League\CommonMark\Extension\HeadingPermalink\HeadingPermalinkExtension'
+        TableOfContentsExtension: '%$League\CommonMark\Extension\TableOfContents\TableOfContentsExtension'
+        AlertExtension: '%$PomoDocs\CommonMark\Alert\AlertExtension'
+  League\CommonMark\MarkdownConverter.userdocs:
+    class: 'League\CommonMark\MarkdownConverter'
+    constructor:
+      environment: '%$League\CommonMark\Environment\Environment.userdocs'

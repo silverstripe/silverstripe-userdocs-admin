@@ -1,0 +1,44 @@
+{
+  "name": "silverstripe-userdocs-admin",
+  "version": "1.0.0",
+  "description": "User documentation admin for Silverstripe CMS",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/silverstripe/silverstripe-userdocs-admin.git"
+  },
+  "homepage": "https://github.com/silverstripe/silverstripe-userdocs-admin",
+  "bugs": {
+    "url": "https://github.com/silverstripe/silverstripe-userdocs-admin/issues"
+  },
+  "author": "Silverstripe Ltd",
+  "engines": {
+    "node": "^18.x"
+  },
+  "scripts": {
+    "build": "yarn && yarn lint && rm -rf client/dist && NODE_ENV=production webpack --mode production --bail --progress",
+    "dev": "NODE_ENV=development webpack --progress",
+    "watch": "NODE_ENV=development webpack --watch --progress",
+    "lint": "yarn lint-js && yarn lint-sass",
+    "lint-js": "eslint client/src",
+    "lint-sass": "stylelint client/src"
+  },
+  "packageManager": "yarn@4.18.0+sha512.fcb8716fe7cd0eece141ffc18b92193a9df9204c1ba83189c288835223fc0bbe64af473bab0d5e9927a7daeb5caf2bb07eb2787cc9338ca040ea125f2a1f2f7e",
+  "devDependencies": {
+    "@babel/runtime": "^7.20.0",
+    "@silverstripe/eslint-config": "^2",
+    "@silverstripe/webpack-config": "^3",
+    "eslint": "^8.26.0",
+    "stylelint": "~16.12.0",
+    "webpack": "^5.74.0",
+    "webpack-cli": "^5.0.0"
+  },
+  "dependencies": {
+    "bootstrap": "^5.2.0",
+    "core-js": "^3.26.0",
+    "webpack-sources": "^3.2.3"
+  },
+  "browserslist": [
+    "defaults"
+  ]
+}
