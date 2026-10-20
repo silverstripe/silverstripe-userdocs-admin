@@ -14,6 +14,8 @@ You can do this by setting up documentation with the same file structure (includ
 
 If you want to localise the name of a root that has no content directly associated with it, you can create an `index.md` file for that root folder and only include the frontmatter data.
 
+To localise content that extends a page, see [localising extensions](./extending_documentation#localising-extensions).
+
 ## Fallback order
 
 Content that hasn't been localised will fallback to unlocalised documentation. For example if your current locale is `pt_BR` and your default locale is `fr_FR`, the order in which documentation is looked up is as follows: `pt_BR`, `pt`, `fr_FR`, `fr`, `en`. English is always the final fallback that is checked, unless your current locale is also English in which case it takes priority.

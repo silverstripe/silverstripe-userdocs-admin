@@ -3,6 +3,7 @@
 namespace SilverStripe\UserDocs\Admin;
 
 use BadMethodCallException;
+use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
 use League\CommonMark\MarkdownConverter;
 use Normalizer;
 use Override;
@@ -165,16 +166,42 @@ class UserDocsAdmin extends LeftAndMain
         if (!$docData || !$docData['hasContent'] || !file_exists($docData['filePath'])) {
             return null;
         }
+        $markdown = file_get_contents($docData['filePath']);
+
+        $extensions = array_values($docData['extensions'] ?? []);
+        $frontMatterParser = (new FrontMatterExtension())->getFrontMatterParser();
+        foreach ($extensions as $i => $extensionDocData) {
+            // Skip extensions that have no content or are the same as the main file
+            $extensionFilePath = $extensionDocData['filePath'];
+            if (
+                $docData['filePath'] === $extensionDocData['filePath']
+                || !$extensionDocData['hasContent']
+                || !file_exists($extensionFilePath)
+            ) {
+                continue;
+            }
+            // Pre-parsing the content with the frontmatter parser ensures we only get the
+            // actual markdown content
+            $parsedExtension = $frontMatterParser->parse(file_get_contents($extensionFilePath));
+            // Add a marker comment that will be picked up by BaseUrlMarkdownExtension before
+            // appending extension content
+            $marker = BaseUrlMarkdownExtension::getExtensionMarker($i);
+            $markdown .= "\n\n$marker\n\n" . $parsedExtension->getContent();
+        }
+
         /** @var MarkdownConverter $converter */
         $converter = Injector::inst()->create(MarkdownConverter::class . '.userdocs');
         $environment = $converter->getEnvironment();
-        $environment->addExtension(BaseUrlMarkdownExtension::create(
+        $baseUrlExtension = BaseUrlMarkdownExtension::create(
             $this->Link('docs'),
             $docData,
-            $this->Link('image')
-        ));
+            $this->Link('image'),
+            $extensions
+        );
+        $environment->addExtension($baseUrlExtension);
         $environment->addExtension(BreadcrumbsExtension::create($this->getBreadcrumbsForSlug($slug)));
-        return $converter->convert(file_get_contents($docData['filePath']))->getContent();
+        $html = $converter->convert($markdown);
+        return $html->getContent();
     }
 
     /**
