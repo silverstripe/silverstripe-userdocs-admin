@@ -1,0 +1,34 @@
+@import "docs/table";
+@import "docs/tableOfContents";
+@import "docs/headingPermalinks";
+@import "docs/breadcrumbs";
+
+* {
+  box-sizing: border-box;
+}
+
+a:hover {
+  text-decoration: none;
+}
+
+// Ensure code blocks don't cause horizontal scrolling of the whole page
+code[class*="language-"] {
+  overflow-x: scroll;
+  display: block;
+}
+
+// Ensure images don't cause horizontal scrolling of the whole page
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+h1:first-child {
+  margin-top: 0;
+}
+
+.user-docs-container {
+  width: 100%;
+  max-width: 650px;
+  margin: 1.5rem auto;
+}

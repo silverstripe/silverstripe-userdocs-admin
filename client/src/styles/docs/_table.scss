@@ -1,0 +1,26 @@
+/* Table styling and responsiveness */
+table {
+  border-collapse: collapse;
+  border: .1rem solid #eeeff1;
+  border-radius: 0.5rem;
+  width: 100%;
+}
+
+th {
+  text-align: left;
+}
+
+tr:nth-child(2n+1) {
+  background-color: #eeeff1;
+}
+
+th, td {
+  padding: 1.5rem;
+}
+
+.table-wrapper {
+  max-width: 100%;
+  width: 100%;
+  margin-bottom: 2rem;
+  overflow-x: auto;
+}

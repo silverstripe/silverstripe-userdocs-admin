@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="SilverStripe">
+    <description>CodeSniffer ruleset for SilverStripe coding conventions.</description>
+
+    <file>src</file>
+    <file>tests</file>
+
+    <!-- Show progress and output sniff names on violation, and add colours -->
+    <arg value="p" />
+    <arg name="colors" />
+    <arg value="s" />
+
+    <!-- base rules are PSR-12 -->
+    <rule ref="PSR12" />
+</ruleset>

@@ -1,0 +1,30 @@
+/* Breadcrumb styling */
+.breadcrumbs {
+  font-size: 0.9rem;
+
+  .breadcrumbs__crumb,
+  :link,
+  :visited {
+    color: #566B8D;
+  }
+}
+
+.breadcrumbs__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.breadcrumbs__list-item {
+  display: inline;
+
+  // Essentially renders as a slash visually, but is ignored by screen readers and text selection
+  &:after {
+    content: "";
+    display: inline-block;
+    margin: 0 0.5em;
+    transform: rotate(15deg);
+    border-right: 0.1em solid currentcolor;
+    height: 0.9em;
+  }
+}

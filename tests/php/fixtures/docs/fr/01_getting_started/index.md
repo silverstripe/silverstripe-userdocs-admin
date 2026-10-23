@@ -1,0 +1,7 @@
+---
+title: Commencer
+---
+
+# Commencer
+
+Bienvenue.

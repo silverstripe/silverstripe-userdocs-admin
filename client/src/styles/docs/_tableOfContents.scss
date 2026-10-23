@@ -1,0 +1,26 @@
+/* Table of contents styling */
+.toc-container {
+  background: #f9f9fa;
+  border-radius: 0.5rem;
+  border: 0.1rem solid #d5d7db;
+  margin-bottom: 3rem;
+  padding: 1.6rem;
+}
+
+.toc-heading {
+  margin-top: 0;
+}
+
+.table-of-contents {
+  font-size: 1.2rem;
+  margin-bottom: 0;
+  padding-left: 1.4rem;
+
+  ul {
+    padding-left: 2rem;
+  }
+
+  li {
+    list-style: inside;
+  }
+}

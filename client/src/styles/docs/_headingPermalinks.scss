@@ -1,0 +1,25 @@
+/* Hide heading permalink until the heading is hovered over (and some styling) */
+.heading-permalink {
+  transition: opacity .15s ease-in;
+  opacity: 0;
+  color: #969ba4;
+  margin-left: 0.8rem;
+  font-size: 0.85em;
+  vertical-align: middle;
+  text-decoration: none;
+
+  h1:hover &,
+  h3:hover &,
+  h2:hover &,
+  h4:hover &,
+  h5:hover &,
+  h6:hover &
+  {
+    opacity: 0.6;
+  }
+
+  &:hover {
+    color: #005ae1;
+    opacity: 1 !important;
+  }
+}
