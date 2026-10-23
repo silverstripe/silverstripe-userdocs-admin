@@ -59,7 +59,7 @@ class UserDocsManifestTest extends SapphireTest
             'module' => 'silverstripe/userdocs-admin',
             'locale' => 'en',
             'slug' => 'getting_started',
-            'parentSlug' => '.',
+            'parentSlug' => null,
             'rootPathInModule' => 'tests/php/fixtures/docs',
             'pathFromLocale' => '01_getting_started/index.md',
         ], $docData['getting_started']);
@@ -398,6 +398,28 @@ class UserDocsManifestTest extends SapphireTest
         $this->assertSame('Ten', $tree['10']['title'] ?? null);
         $this->assertSame('Ten point zero', $tree['10.0']['title'] ?? null);
         $this->assertSame('One e one', $tree['1e1']['title'] ?? null);
+    }
+
+    public function testGetLocalisedTreeDataWithZeroRoot(): void
+    {
+        // "0" is falsy, but the root must still be registered when it has no index
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('zero_root')], true);
+
+        $this->assertSame([
+            'slug' => '0',
+            'title' => '0',
+            'isIndex' => false,
+            'hasContent' => false,
+            'children' => [
+                'some_page' => [
+                    'slug' => '0/some_page',
+                    'title' => 'Some page',
+                    'isIndex' => false,
+                    'hasContent' => true,
+                ],
+            ],
+        ], $manifest->getLocalisedTreeData()['0'] ?? null);
     }
 
     public static function provideGetLocalisedTreeDataSortOrder(): array

@@ -236,8 +236,8 @@ class UserDocsManifest implements Flushable
      */
     private function compareDocData(array $a, array $b, string $locale, array $sortTitles): int
     {
-        $isRootA = $a['parentSlug'] === '.';
-        $isRootB = $b['parentSlug'] === '.';
+        $isRootA = $a['parentSlug'] === null;
+        $isRootB = $b['parentSlug'] === null;
         if ($isRootA !== $isRootB) {
             return $isRootA ? -1 : 1;
         }
@@ -369,6 +369,9 @@ class UserDocsManifest implements Flushable
         }
         $slug = $this->getSlugForPath($pathFromLocale, $isRootDir);
         $parentSlug = dirname($slug);
+        if ($parentSlug === '.') {
+            $parentSlug = null;
+        }
 
         if (!array_key_exists($locale, $data[$module] ?? [])) {
             $data[$module][$locale] = [];
@@ -377,9 +380,8 @@ class UserDocsManifest implements Flushable
         // Make sure root node data is registered if it has no doc file.
         // Note we don't register branch nodes in the same way because those should always have associated docs.
         if (
-            $parentSlug
+            $parentSlug !== null
             && !array_key_exists($parentSlug, $data[$module][$locale])
-            && $parentSlug !== '.'
             && !str_contains($parentSlug, '/')
         ) {
             $basePathWithLocale = Path::join($basePath, $locale);
@@ -532,7 +534,7 @@ class UserDocsManifest implements Flushable
         }
         $breadcrumbs = [];
         $parentSlug = $docData[$slug]['parentSlug'];
-        while (isset($docData[$parentSlug])) {
+        while ($parentSlug !== null && isset($docData[$parentSlug])) {
             $parent = $docData[$parentSlug];
             $href = null;
             if ($parent['hasContent']) {

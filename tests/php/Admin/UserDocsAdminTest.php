@@ -125,6 +125,21 @@ class UserDocsAdminTest extends FunctionalTest
         }
     }
 
+    public function testDocsBreadcrumbs(): void
+    {
+        $response = $this->get('admin/user-docs/docs/getting_started/nested_section/child_page');
+
+        $body = $response->getBody();
+        $this->assertMatchesRegularExpression($this->openingTagPattern('a', [
+            'href' => 'admin/user-docs/docs/getting_started',
+            'class' => 'breadcrumbs__crumb',
+        ]), $body);
+        $this->assertMatchesRegularExpression($this->openingTagPattern('a', [
+            'href' => 'admin/user-docs/docs/getting_started/nested_section',
+            'class' => 'breadcrumbs__crumb',
+        ]), $body);
+    }
+
     public static function provideDocsMissingDoc(): array
     {
         return [
