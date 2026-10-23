@@ -6,6 +6,13 @@
 @import "variables";
 @import "bootstrap/scss/maps";
 @import "bootstrap/scss/mixins/breakpoints";
+@import "docs/content";
+@import "docs/table";
+@import "docs/tableOfContents";
+@import "docs/headingPermalinks";
+@import "docs/typography";
+@import "docs/alerts";
+@import "docs/descriptionLists";
 
 // Hide links tree when the window is too narrow
 // This mimics the CMS tree
@@ -49,7 +56,7 @@
 
   .flyout-menu__tree {
     background: $white;
-    width: $cms-panel-sm;
+    width: 375px;
     margin-left: auto;
     margin-right: 0;
 
@@ -97,26 +104,6 @@
   li.jstree-open > ul.jstree-child-list {
     margin-left: 2px;
     margin-right: 0;
-  }
-}
-
-// Styling for the actual rendered documentation
-.userdocs-content {
-  // Hide heading permalink until the heading is hovered over or the permalink has focus.
-  // Use opacity, because keyboard users can't tab to an element with visibility: hidden.
-  .heading-permalink {
-    opacity: 0;
-  }
-
-  h1:hover .heading-permalink,
-  h3:hover .heading-permalink,
-  h2:hover .heading-permalink,
-  h4:hover .heading-permalink,
-  h5:hover .heading-permalink,
-  h6:hover .heading-permalink,
-  .heading-permalink:focus
-  {
-    opacity: 1;
   }
 }
 

@@ -1,0 +1,34 @@
+/* Description lists */
+.userdocs-content {
+  dl {
+    margin: 0 0 1.5rem;
+    padding-left: 1.25rem;
+  }
+
+  // The space between items is much larger than the space inside a description,
+  // so extra paragraphs do not look like a new item.
+  dt {
+    font-weight: 600;
+    margin-top: 1.75rem;
+
+    &:first-child,
+    + dt {
+      margin-top: 0;
+    }
+  }
+
+  // The indent shows that all lines in a description belong to the term above.
+  dd {
+    margin: .25rem 0 0 1rem;
+
+    // The table wrapper has a more specific margin rule, so it is selected directly.
+    > *,
+    > .table-wrapper {
+      margin-bottom: .6em;
+    }
+
+    > :last-child {
+      margin-bottom: 0;
+    }
+  }
+}

@@ -27,6 +27,13 @@ SilverStripe\Core\Injector\Injector:
           allow:
             - 'id'
         alert:
+          colors:
+            # mapping to bootstrap classes
+            note: 'secondary'
+            tip: 'success'
+            important: 'info'
+            warning: 'warning'
+            caution: 'danger'
           icons:
             active: true
         heading_permalink:
@@ -40,6 +47,11 @@ SilverStripe\Core\Injector\Injector:
           min_heading_level: 2
           placeholder: '[TABLE_OF_CONTENTS]'
           position: 'placeholder'
+        table:
+          wrap:
+            enabled: true
+            attributes:
+              class: 'table-wrapper'
       extensions:
         CommonMarkCoreExtension: '%$League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension'
         FrontMatterExtension: '%$League\CommonMark\Extension\FrontMatter\FrontMatterExtension'

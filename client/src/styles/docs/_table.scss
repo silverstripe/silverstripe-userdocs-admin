@@ -1,0 +1,45 @@
+/* Table styling and responsiveness */
+.userdocs-content {
+  table {
+    border-collapse: collapse;
+    border: .1rem solid #eeeff1;
+    width: 100%;
+  }
+
+  th {
+    text-align: left;
+  }
+
+  tr:nth-child(2n+1) {
+    background-color: #eeeff1;
+  }
+
+  // Continue the stripes from the header row, so the header and first body row differ.
+  thead + tbody tr {
+    &:nth-child(2n+1) {
+      background-color: transparent;
+    }
+
+    &:nth-child(2n) {
+      background-color: #eeeff1;
+    }
+  }
+
+  th, td {
+    padding: 1.5rem;
+  }
+
+  // The wrapper has the border so the rounded corners also clip the cell backgrounds.
+  .table-wrapper {
+    border: .1rem solid #eeeff1;
+    border-radius: 0.5rem;
+    max-width: 100%;
+    width: 100%;
+    margin-bottom: 2rem;
+    overflow-x: auto;
+
+    table {
+      border: 0;
+    }
+  }
+}

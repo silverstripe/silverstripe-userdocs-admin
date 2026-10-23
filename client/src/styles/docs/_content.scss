@@ -1,0 +1,41 @@
+/* Base styling for the rendered documentation */
+.userdocs-content {
+  font-size: 1.077rem; // 14px
+
+  * {
+    box-sizing: border-box;
+  }
+
+  // The link colour alone does not have enough contrast with body text (WCAG 1.4.1).
+  a {
+    text-decoration: underline;
+    text-underline-offset: .15em;
+
+    &:hover,
+    &:focus {
+      text-decoration-thickness: .15em;
+    }
+  }
+
+  // Ensure images don't cause horizontal scrolling of the whole page
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  h1:first-child {
+    margin-top: 0;
+  }
+
+  // Not in the table of contents, which has its own spacing.
+  :is(ul, ol):not(.table-of-contents, .table-of-contents ul) > li + li {
+    margin-top: .35em;
+  }
+
+  // Centred until the space on each side reaches the panel padding, then aligned to the left.
+  .user-docs-container {
+    width: 100%;
+    max-width: 650px;
+    margin: 1.5rem auto 3rem max(0px, min((100% - 650px) / 2, $panel-padding-x));
+  }
+}

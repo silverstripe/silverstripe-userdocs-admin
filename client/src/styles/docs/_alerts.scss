@@ -1,0 +1,26 @@
+/* Layout for GitHub-style alerts. Colours come from the bootstrap alert classes. */
+.userdocs-content {
+  .alert > :last-child {
+    margin-bottom: 0;
+  }
+
+  // The default link colour does not have enough contrast with the alert backgrounds.
+  .alert a {
+    color: var(--bs-alert-link-color);
+  }
+
+  .alert-title {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-weight: 600;
+    margin-bottom: .25rem;
+
+    // Flex centres the icon on the line box, which sits a little lower than the capital letters.
+    svg {
+      flex: none;
+      position: relative;
+      top: -.04em;
+    }
+  }
+}

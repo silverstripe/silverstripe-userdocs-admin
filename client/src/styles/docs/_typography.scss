@@ -1,0 +1,68 @@
+/* Headings, code, and quotes */
+.userdocs-content {
+  // Sizes are relative to body text. Each heading level is at least body size, with more space above than below.
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 1.6em 0 .5em;
+  }
+
+  h1 {
+    font-size: 2em;
+  }
+
+  h2 {
+    font-size: 1.625em;
+  }
+
+  h3 {
+    font-size: 1.35em;
+  }
+
+  h4 {
+    font-size: 1.2em;
+  }
+
+  h5 {
+    font-size: 1.1em;
+  }
+
+  h6 {
+    font-size: 1em;
+  }
+
+  // Translucent backgrounds keep code visible on alerts and table rows.
+  :not(pre) > code {
+    background: rgba($gray-700, .1);
+    border-radius: $border-radius;
+    color: inherit;
+    font-size: .9em;
+    padding: .1em .3em;
+  }
+
+  pre {
+    background: rgba($gray-700, .07);
+    border-radius: $border-radius;
+    margin-bottom: $spacer;
+    overflow-x: auto;
+    padding: $spacer-sm $spacer;
+
+    code {
+      color: inherit;
+    }
+  }
+
+  blockquote {
+    border-left: .25rem solid $border-color;
+    padding-left: $spacer;
+
+    > :last-child {
+      margin-bottom: 0;
+    }
+  }
+}
