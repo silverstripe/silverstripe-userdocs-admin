@@ -15,6 +15,7 @@ use SilverStripe\Core\Manifest\ModuleResourceLoader;
 use SilverStripe\Dev\SapphireTest;
 use SilverStripe\i18n\i18n;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
+use SilverStripe\UserDocs\Markdown\ExtensionDocMarker;
 use SilverStripe\View\SSViewer;
 
 class BaseUrlMarkdownExtensionTest extends SapphireTest
@@ -368,15 +369,17 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         $logger->expects($this->never())->method('warning');
         Injector::inst()->registerService($logger, LoggerInterface::class);
         $markdown = "![Original](images/screenshot.png)\n\n"
-            . BaseUrlMarkdownExtension::getExtensionMarker(0) . "\n\n"
+            . ExtensionDocMarker::getMarker(0) . "\n\n"
             . '![Extension](images/screenshot.png)';
 
         $html = $this->convert($markdown, static::docData(), extensionData: [0 => $extensionDocData]);
 
         $originalUrl = $this->getImageUrl('tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png');
         $extensionUrl = $this->getImageUrl('tests/php/fixtures/localisation/en/01_section/images/screenshot.png');
+        // The marker is left in place for other listeners to use
         $this->assertSame(
             '<p><img src="' . htmlspecialchars($originalUrl) . '" alt="Original" /></p>' . "\n"
+            . ExtensionDocMarker::getMarker(0) . "\n"
             . '<p><img src="' . htmlspecialchars($extensionUrl) . '" alt="Extension" /></p>',
             trim($html)
         );
@@ -396,9 +399,9 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
             ],
         ];
         $markdown = "![Original](images/screenshot.png)\n\n"
-            . BaseUrlMarkdownExtension::getExtensionMarker(0) . "\n\n"
+            . ExtensionDocMarker::getMarker(0) . "\n\n"
             . "![First extension](images/screenshot.png)\n\n"
-            . BaseUrlMarkdownExtension::getExtensionMarker(1) . "\n\n"
+            . ExtensionDocMarker::getMarker(1) . "\n\n"
             . '![Second extension](images/screenshot.png)';
 
         $html = $this->convert($markdown, static::docData(), extensionData: $extensionData);
@@ -422,13 +425,14 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
             'pathFromLocale' => '01_getting_started/first_page/index.md',
         ];
         $markdown = "[original](other_page)\n\n"
-            . BaseUrlMarkdownExtension::getExtensionMarker(0) . "\n\n"
+            . ExtensionDocMarker::getMarker(0) . "\n\n"
             . '[extension](other_page)';
 
         $html = $this->convert($markdown, static::docData(), extensionData: [0 => $extensionDocData]);
 
         $this->assertSame(
             '<p><a href="/admin/user-docs/docs/getting_started/other_page">original</a></p>' . "\n"
+            . ExtensionDocMarker::getMarker(0) . "\n"
             . '<p><a href="/admin/user-docs/docs/getting_started/first_page/other_page">extension</a></p>',
             trim($html)
         );
@@ -446,44 +450,10 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         Injector::inst()->registerService($logger, LoggerInterface::class);
         $extensionDocData = static::extensionDocData();
         $markdown = "Original content\n\n"
-            . BaseUrlMarkdownExtension::getExtensionMarker(0) . "\n\n"
+            . ExtensionDocMarker::getMarker(0) . "\n\n"
             . '![Missing](images/missing.png)';
 
         $this->convert($markdown, static::docData(), extensionData: [0 => $extensionDocData]);
-    }
-
-    public function testOnDocumentParsedWithMarkerInsideCodeBlock(): void
-    {
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())
-            ->method('warning')
-            ->with(
-                "Could not find where the content from '/path/to/extension.md' starts,"
-                . ' so its links and images may not work.'
-                . ' Check the content before it for an unclosed code block or HTML block.'
-            );
-        Injector::inst()->registerService($logger, LoggerInterface::class);
-        // The original doc has a code block that is never closed, so it includes the marker
-        $markdown = "```\nsome code\n\n" . BaseUrlMarkdownExtension::getExtensionMarker(0) . "\n\nExtension content";
-
-        $this->convert($markdown, static::docData(), extensionData: [0 => ['filePath' => '/path/to/extension.md']]);
-    }
-
-    public function testOnDocumentParsedWithMarkerInsideHtmlBlock(): void
-    {
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())
-            ->method('warning')
-            ->with(
-                "Could not find where the content from '/path/to/extension.md' starts,"
-                . ' so its links and images may not work.'
-                . ' Check the content before it for an unclosed code block or HTML block.'
-            );
-        Injector::inst()->registerService($logger, LoggerInterface::class);
-        // The original doc has a <pre> element that is never closed, so the HTML block includes the marker
-        $markdown = "<pre>\nsome code\n\n" . BaseUrlMarkdownExtension::getExtensionMarker(0) . "\n\nExtension content";
-
-        $this->convert($markdown, static::docData(), extensionData: [0 => ['filePath' => '/path/to/extension.md']]);
     }
 
     public function testOnDocumentParsedWithUnknownExtensionMarker(): void
@@ -496,12 +466,14 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
                 . ' uses the paths of the content before it.'
             );
         Injector::inst()->registerService($logger, LoggerInterface::class);
-        $markdown = "Original content\n\n" . BaseUrlMarkdownExtension::getExtensionMarker(5) . "\n\nExtension content";
+        $markdown = "Original content\n\n" . ExtensionDocMarker::getMarker(5) . "\n\nExtension content";
 
         $html = $this->convert($markdown, static::docData(), extensionData: []);
 
-        // The marker is still removed
-        $this->assertSame("<p>Original content</p>\n<p>Extension content</p>", trim($html));
+        $this->assertSame(
+            "<p>Original content</p>\n" . ExtensionDocMarker::getMarker(5) . "\n<p>Extension content</p>",
+            trim($html)
+        );
     }
 
     public function testRegister(): void

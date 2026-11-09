@@ -3,6 +3,7 @@
 namespace SilverStripe\UserDocs\Admin;
 
 use BadMethodCallException;
+use League\CommonMark\Event\DocumentParsedEvent;
 use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
 use League\CommonMark\MarkdownConverter;
 use Normalizer;
@@ -24,6 +25,8 @@ use SilverStripe\ORM\FieldType\DBField;
 use SilverStripe\ORM\FieldType\DBHTMLText;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
 use SilverStripe\UserDocs\Markdown\Breadcrumbs\BreadcrumbsExtension;
+use SilverStripe\UserDocs\Markdown\ExtensionDocMarker;
+use SilverStripe\UserDocs\Markdown\ExtensionPointMarkdownExtension;
 use SilverStripe\UserDocs\Search\SearchForm;
 use SilverStripe\UserDocs\Search\SearchIndex;
 
@@ -183,9 +186,8 @@ class UserDocsAdmin extends LeftAndMain
             // Pre-parsing the content with the frontmatter parser ensures we only get the
             // actual markdown content
             $parsedExtension = $frontMatterParser->parse(file_get_contents($extensionFilePath));
-            // Add a marker comment that will be picked up by BaseUrlMarkdownExtension before
-            // appending extension content
-            $marker = BaseUrlMarkdownExtension::getExtensionMarker($i);
+            // Add a marker before the extension content, so the markdown extensions know where it starts
+            $marker = ExtensionDocMarker::getMarker($i);
             $markdown .= "\n\n$marker\n\n" . $parsedExtension->getContent();
         }
 
@@ -200,6 +202,15 @@ class UserDocsAdmin extends LeftAndMain
         );
         $environment->addExtension($baseUrlExtension);
         $environment->addExtension(BreadcrumbsExtension::create($this->getBreadcrumbsForSlug($slug)));
+        $environment->addExtension(ExtensionPointMarkdownExtension::create($docData, $extensions));
+        // Check the markers before any content is moved or removed, so no hidden marker is missed
+        $environment->addEventListener(
+            DocumentParsedEvent::class,
+            fn (DocumentParsedEvent $event) => ExtensionDocMarker::warnAboutHiddenMarkers($event, $extensions),
+            1000
+        );
+        // The markers are only needed while the document is processed, so don't render them
+        $environment->addEventListener(DocumentParsedEvent::class, [ExtensionDocMarker::class, 'removeMarkers'], -200);
         $html = $converter->convert($markdown);
         return $html->getContent();
     }

@@ -4,6 +4,7 @@ namespace SilverStripe\UserDocs\Tests\Admin;
 
 use DOMDocument;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
 use SilverStripe\Control\HTTPRequest;
 use SilverStripe\Core\Injector\Injector;
@@ -368,6 +369,75 @@ class UserDocsAdminTest extends FunctionalTest
         foreach ($headingIds as $headingId) {
             $this->assertStringContainsString("#$headingId\"", $tableOfContents[0]);
         }
+    }
+
+    public function testRenderDocWithExtensionPoint(): void
+    {
+        $this->useExtensionModules(['one', 'two']);
+
+        $html = (new UserDocsAdmin())->renderDoc('section/extension_point');
+
+        // The extension's content goes at the extension point, and its heading is in the table of contents
+        $beforePosition = strpos($html, 'Before extension point.');
+        $insertedPosition = strpos($html, 'Inserted content.');
+        $this->assertNotFalse($beforePosition);
+        $this->assertGreaterThan($beforePosition, $insertedPosition);
+        $this->assertGreaterThan($insertedPosition, strpos($html, 'After extension point.'));
+        preg_match('#<nav class="toc-container".*?</nav>#s', $html, $tableOfContents);
+        $this->assertStringContainsString('#userdocs-inserted-heading"', $tableOfContents[0] ?? '');
+        // The table of contents goes before the inserted heading, because it is now the first heading
+        $this->assertLessThan(
+            strpos($html, '<h2 id="userdocs-inserted-heading"'),
+            strpos($html, '<nav class="toc-container"')
+        );
+        // Markers aren't rendered
+        $this->assertStringNotContainsString('<!--', $html);
+    }
+
+    public static function provideRenderDocWithHiddenExtensionMarker(): array
+    {
+        return [
+            'unclosed code block in the original doc' => [
+                'slug' => 'section/unclosed_code',
+                'moduleNames' => ['one', 'two'],
+                'hiddenModuleName' => 'two',
+                'hiddenFileName' => '12_unclosed_code.md',
+            ],
+            // The unclosed code block is removed with the content for the missing extension point,
+            // which must not stop the hidden marker from being found
+            'unclosed code block in content that is removed' => [
+                'slug' => 'section/unclosed_code_removed',
+                'moduleNames' => ['one', 'two', 'three'],
+                'hiddenModuleName' => 'two',
+                'hiddenFileName' => '13_unclosed_code_removed.md',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideRenderDocWithHiddenExtensionMarker')]
+    public function testRenderDocWithHiddenExtensionMarker(
+        string $slug,
+        array $moduleNames,
+        string $hiddenModuleName,
+        string $hiddenFileName
+    ): void {
+        $this->useExtensionModules($moduleNames);
+        $warnings = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('warning')->willReturnCallback(function (string $message) use (&$warnings) {
+            $warnings[] = $message;
+        });
+        Injector::inst()->registerService($logger, LoggerInterface::class);
+
+        (new UserDocsAdmin())->renderDoc($slug);
+
+        // The warning names the extension doc after the unclosed code block
+        $extensionPath = $this->getExtensionModulePath($hiddenModuleName) . "/docs/en/01_section/$hiddenFileName";
+        $this->assertSame([
+            "Could not find where the content from '$extensionPath' starts, so it might be in the wrong place"
+            . ' and its links and images might not work.'
+            . ' Check the content before it for an unclosed code block or HTML block.',
+        ], $warnings);
     }
 
     public static function provideRenderDocWithExtensionKey(): array

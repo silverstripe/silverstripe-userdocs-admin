@@ -6,7 +6,6 @@ use League\CommonMark\Environment\Environment;
 use League\CommonMark\Environment\EnvironmentBuilderInterface;
 use League\CommonMark\Event\DocumentParsedEvent;
 use League\CommonMark\Extension\ExtensionInterface;
-use League\CommonMark\Extension\CommonMark\Node\Block\HtmlBlock;
 use League\CommonMark\Extension\CommonMark\Node\Inline\AbstractWebResource;
 use League\CommonMark\Extension\CommonMark\Node\Inline\Image;
 use League\CommonMark\Extension\CommonMark\Node\Inline\Link;
@@ -17,9 +16,6 @@ use League\CommonMark\Extension\HeadingPermalink\HeadingPermalinkRenderer;
 use League\CommonMark\Extension\TableOfContents\Node\TableOfContents;
 use League\CommonMark\Extension\TableOfContents\TableOfContentsExtension;
 use League\CommonMark\Extension\TableOfContents\TableOfContentsRenderer;
-use League\CommonMark\Node\Node;
-use League\CommonMark\Node\RawMarkupContainerInterface;
-use League\CommonMark\Node\StringContainerInterface;
 use League\Config\ConfigurationAwareInterface;
 use League\Config\ConfigurationInterface;
 use Psr\Log\LoggerInterface;
@@ -56,11 +52,6 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
     private ?ConfigurationInterface $config = null;
 
     /**
-     * Matches the HTML comment from getExtensionMarker()
-     */
-    private const EXTENSION_MARKER_PATTERN = '/<!-- UserDocsAdmin__userdocs-extension:(?<index>\S+) -->/';
-
-    /**
      * @param string $baseUrl The URL that doc slugs are relative to
      * @param array $docData Metadata for the doc from UserDocsManifest
      * @param string $imageUrl The URL of the action which sends images from the docs
@@ -79,14 +70,6 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
         $this->rewriteAnchorLinks = (bool) Deprecation::withSuppressedNotice(
             fn () => SSViewer::config()->get('enable_base_tag')
         );
-    }
-
-    /**
-     * Get the HTML comment to put in the markdown before the content of an extension doc.
-     */
-    public static function getExtensionMarker(string|int $index): string
-    {
-        return "<!-- UserDocsAdmin__userdocs-extension:$index -->";
     }
 
     public function register(EnvironmentBuilderInterface $environment): void
@@ -140,70 +123,23 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
     {
         $document = $event->getDocument();
         $currentDocData = $this->docData;
-        $markers = [];
 
         foreach ($document->iterator() as $node) {
-            if ($node instanceof HtmlBlock) {
-                $extensionIndex = $this->getextensionIndexFromMarker($node);
-                if ($extensionIndex !== null) {
-                    if (array_key_exists($extensionIndex, $this->extensionData)) {
-                        $currentDocData = $this->extensionData[$extensionIndex];
-                    } else {
-                        Injector::inst()->get(LoggerInterface::class)->warning(
-                            "No extension doc data for marker '$extensionIndex', so the content after it"
-                            . ' uses the paths of the content before it.'
-                        );
-                    }
-                    $markers[] = $node;
-                    continue;
+            $extensionIndex = ExtensionDocMarker::getIndex($node);
+            if ($extensionIndex !== null) {
+                if (array_key_exists($extensionIndex, $this->extensionData)) {
+                    $currentDocData = $this->extensionData[$extensionIndex];
+                } else {
+                    Injector::inst()->get(LoggerInterface::class)->warning(
+                        "No extension doc data for marker '$extensionIndex', so the content after it"
+                        . ' uses the paths of the content before it.'
+                    );
                 }
+                continue;
             }
             if ($node instanceof Link || $node instanceof Image) {
                 $this->updateUrl($node, $currentDocData);
-                continue;
             }
-            $this->warnIfMarkerIsInside($node);
-        }
-
-        // Markers are only needed to find where each extension starts, so don't render them
-        foreach ($markers as $marker) {
-            $marker->detach();
-        }
-    }
-
-    /**
-     * Get the extension index if this node is only an extension marker
-     */
-    private function getextensionIndexFromMarker(HtmlBlock $node): ?string
-    {
-        if (!preg_match(BaseUrlMarkdownExtension::EXTENSION_MARKER_PATTERN, $node->getLiteral(), $matches)) {
-            return null;
-        }
-        if (trim($node->getLiteral()) !== $matches[0]) {
-            return null;
-        }
-        return $matches['index'];
-    }
-
-    /**
-     * Log a warning if an extension marker is part of other content.
-     * This happens when content before the marker has an unclosed code block or HTML block,
-     * so links and images in that extension are resolved relative to the wrong file.
-     */
-    private function warnIfMarkerIsInside(Node $node): void
-    {
-        if (!($node instanceof StringContainerInterface) && !($node instanceof RawMarkupContainerInterface)) {
-            return;
-        }
-        if (!preg_match_all(BaseUrlMarkdownExtension::EXTENSION_MARKER_PATTERN, $node->getLiteral(), $matches)) {
-            return;
-        }
-        foreach ($matches['index'] as $extensionIndex) {
-            $filePath = $this->extensionData[$extensionIndex]['filePath'] ?? $extensionIndex;
-            Injector::inst()->get(LoggerInterface::class)->warning(
-                "Could not find where the content from '$filePath' starts, so its links and images may not work."
-                . ' Check the content before it for an unclosed code block or HTML block.'
-            );
         }
     }
 

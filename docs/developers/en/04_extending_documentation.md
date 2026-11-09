@@ -16,6 +16,49 @@ If there is no original file for the page, its extensions aren't shown.
 > [!TIP]
 > Other frontmatter metadata in the file will still take effect. For example if you include a title in the frontmatter for your extension page, and the extension comes after the original page, that title will be used instead of the title from the original file. This doesn't happen if the extension falls back to a locale that comes later in the [fallback order](./localising_documentation#fallback-order) than the original page, so an untranslated extension doesn't replace a translated title. To change only the title of a page, use an extension that has a title in its frontmatter and no other content.
 
+## Adding content partway through a page {#extension-points}
+
+By default, extension content is added to the end of the page. The original page can declare named extension points where extensions can add content instead. Add an extension point with an HTML comment on its own line:
+
+```text
+## Configuration
+
+Some information about configuration.
+
+<!-- userdocs-extension-point: configuration -->
+
+## Next steps
+```
+
+In your extension, put the content for an extension point after an HTML comment that names it. The content goes up to the next comment like this, or to the end of the file:
+
+```text
+---
+extends: true
+---
+
+This content is added to the end of the page.
+
+<!-- userdocs-extends: configuration -->
+
+This content is added at the "configuration" extension point.
+
+<!-- userdocs-extends: next-steps -->
+
+This content is added at the "next-steps" extension point.
+```
+
+- Content before the first `userdocs-extends` comment is added to the end of the page.
+- Extension point names can only have lowercase letters, numbers, `-` and `_`. Don't translate them, because each translation of a page must use the same names. If a `userdocs-extends` comment has a name that isn't valid, a warning is logged and the content after it isn't shown.
+- Only the original page can declare extension points. Extension points in an extension are ignored, and a warning is logged.
+- If the page has no extension point with the name, that content isn't shown. This happens if the original page is replaced by a page without that extension point, but can also happen if you mistype the extension point name.
+- If several modules add content to the same extension point, the content is added in the module priority order.
+
+> [!WARNING]
+> An extension point can be inside a list or a block quote, but we don't recommend it. The content from extensions becomes part of that list item or block quote, which might not look the way you expect.
+>
+> The `userdocs-extends` comment in the extension must not be inside a list or a block quote. If it is, a warning is logged, and that list or block quote and the content after it up to the next `userdocs-extends` comment aren't shown.
+
 ## Replacing, removing and translating extensions
 
 Each extension belongs to a module. With `extends: true`, that's the module that has the file. Set `extends` to the name of another module to provide that module's extension instead:
