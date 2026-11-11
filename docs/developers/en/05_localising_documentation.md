@@ -12,6 +12,8 @@ You can do this by setting up documentation with the same file structure (includ
 > [!IMPORTANT]
 > When localising documentation, you *must* match the folder and file names! Do not translate the names of folders or files. Instead, to update the title use frontmatter.
 
+If a page has headings, keep their IDs in the translation with a [custom ID](./writing_documentation#supported-markdown-syntax). For example, translate `## Next steps` as `## Prochaines étapes {#next-steps}`. Otherwise the translated headings get different IDs, so links to them and [extension content near them](./extending_documentation#heading-inserts) don't work.
+
 If you want to localise the name of a root that has no content directly associated with it, you can create an `index.md` file for that root folder and only include the frontmatter data.
 
 To localise content that extends a page, see [localising extensions](./extending_documentation#localising-extensions).

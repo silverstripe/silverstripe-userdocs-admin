@@ -18,7 +18,59 @@ If there is no original file for the page, its extensions aren't shown.
 
 ## Adding content partway through a page {#extension-points}
 
-By default, extension content is added to the end of the page. The original page can declare named extension points where extensions can add content instead. Add an extension point with an HTML comment on its own line:
+By default, extension content is added to the end of the page. You can also add extension content around headings in the original page, or in specifically specified extension points.
+
+### Adding content near a heading {#heading-inserts}
+
+To add content before or after a heading, or at the end of a section, put an HTML comment on its own line in your extension like below.
+
+Name the heading by its ID with `#` in front, the same as in a link to the heading:
+
+| Comment | Where the content goes |
+| --- | --- |
+| `<!-- userdocs-insert-before: #configuration -->` | Before the heading |
+| `<!-- userdocs-insert-after: #configuration -->` | Directly after the heading, before the rest of its section |
+| `<!-- userdocs-insert-end: #configuration -->` | At the end of the section, after its subsections and before the next heading of the same or a higher level |
+
+For example, with this original page:
+
+```text
+## Configuration
+
+Some information about configuration.
+
+### Advanced configuration
+
+Some advanced information.
+
+## Next steps
+```
+
+this extension adds content in three places:
+
+```text
+---
+extends: true
+---
+
+<!-- userdocs-insert-after: #configuration -->
+
+This content is added before "Some information about configuration."
+
+<!-- userdocs-insert-end: #configuration -->
+
+This content is added after "Some advanced information."
+
+<!-- userdocs-insert-before: #next-steps -->
+
+This content is added after the content for the end of the "Configuration" section.
+```
+
+The ID of a heading is its [custom ID](./writing_documentation#supported-markdown-syntax) if it has one. If it doesn't, the ID comes from the heading text, so it changes if the text changes. It is also different in each translation of the page, unless the translation [keeps the IDs](./localising_documentation). Note that the ID will have a prefix when rendered - this prefix must not be included in your insert comment.
+
+### Adding content at an extension point
+
+The original page can declare named extension points. Add an extension point with an HTML comment on its own line:
 
 ```text
 ## Configuration
@@ -30,7 +82,7 @@ Some information about configuration.
 ## Next steps
 ```
 
-In your extension, put the content for an extension point after an HTML comment that names it. The content goes up to the next comment like this, or to the end of the file:
+In your extension, put the content for an extension point after a `userdocs-insert-at` comment that names it:
 
 ```text
 ---
@@ -39,25 +91,25 @@ extends: true
 
 This content is added to the end of the page.
 
-<!-- userdocs-extends: configuration -->
+<!-- userdocs-insert-at: configuration -->
 
 This content is added at the "configuration" extension point.
-
-<!-- userdocs-extends: next-steps -->
-
-This content is added at the "next-steps" extension point.
 ```
 
-- Content before the first `userdocs-extends` comment is added to the end of the page.
-- Extension point names can only have lowercase letters, numbers, `-` and `_`. Don't translate them, because each translation of a page must use the same names. If a `userdocs-extends` comment has a name that isn't valid, a warning is logged and the content after it isn't shown.
+- Extension point names can only have lowercase letters, numbers, `-` and `_`. Don't translate them, because each translation of a page must use the same names. If a `userdocs-insert-at` comment has a name that isn't valid, a warning is logged and the content after it isn't shown.
 - Only the original page can declare extension points. Extension points in an extension are ignored, and a warning is logged.
-- If the page has no extension point with the name, that content isn't shown. This happens if the original page is replaced by a page without that extension point, but can also happen if you mistype the extension point name.
-- If several modules add content to the same extension point, the content is added in the module priority order.
+
+### Rules for adding content partway through a page
+
+- Content before the first `userdocs-insert-*` comment is added to the end of the page. It comes after content for the end of the last section.
+- Only headings and extension points in the original page can be used. Headings in extensions can't be used.
+- If the page has no heading or extension point with the name, that content isn't shown. This happens if the original page is replaced by a page without it, but can also happen if you mistype the name.
+- If several modules add content to the same place, the content is added in the module priority order.
 
 > [!WARNING]
-> An extension point can be inside a list or a block quote, but we don't recommend it. The content from extensions becomes part of that list item or block quote, which might not look the way you expect.
+> An extension point or heading can be inside a list or a block quote, but we don't recommend using it. The content from extensions becomes part of that list item or block quote, which might not look the way you expect.
 >
-> The `userdocs-extends` comment in the extension must not be inside a list or a block quote. If it is, a warning is logged, and that list or block quote and the content after it up to the next `userdocs-extends` comment aren't shown.
+> The `userdocs-insert-*` comment in the extension must not be inside a list or a block quote. If it is, a warning is logged, and that list or block quote and the content after it up to the next `userdocs-insert-*` comment aren't shown.
 
 ## Replacing, removing and translating extensions
 

@@ -394,6 +394,20 @@ class UserDocsAdminTest extends FunctionalTest
         $this->assertStringNotContainsString('<!--', $html);
     }
 
+    public function testRenderDocWithHeadingInsert(): void
+    {
+        $this->useExtensionModules(['one', 'two']);
+
+        $html = (new UserDocsAdmin())->renderDoc('section/extension_point');
+
+        // The heading is found by its ID without the prefix, and the extension's content goes directly after it
+        $headingPosition = strpos($html, '<h2 id="userdocs-original-heading"');
+        $insertedPosition = strpos($html, 'Inserted after heading.');
+        $this->assertNotFalse($headingPosition);
+        $this->assertGreaterThan($headingPosition, $insertedPosition);
+        $this->assertGreaterThan($insertedPosition, strpos($html, 'Original heading content.'));
+    }
+
     public static function provideRenderDocWithHiddenExtensionMarker(): array
     {
         return [
