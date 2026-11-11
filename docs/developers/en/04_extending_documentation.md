@@ -137,3 +137,6 @@ Extensions are ordered by the module they belong to, so an override goes in the 
 To localise an extension, add a file with the same path under the appropriate locale folder, and set `extends` to the module the extension belongs to. For example if `other/module` extends a page, use `extends: 'other/module'` in your translation. If the translation is in the same module as the extension, `extends: true` works too.
 
 Each extension falls back to other locales separately from the page it extends, so a translated page still shows extensions that haven't been translated. As with pages, the module with the highest priority that has the extension in any locale in the [fallback order](./localising_documentation#fallback-order) is used, so if you translate an extension from another module, your module must have a higher priority than that module and any module that overrides the extension.
+
+> [!NOTE]
+> The [search](./search) index for each locale only has content in that locale. If a translated page shows an extension that hasn't been translated, the content of that extension isn't found when searching in the language of the page. Translate the extension to make its content searchable. In the same way, a translated extension is only found if the page it extends is also translated.

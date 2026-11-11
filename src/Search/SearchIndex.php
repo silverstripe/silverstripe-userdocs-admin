@@ -29,6 +29,7 @@ use SilverStripe\Core\Flushable;
 use SilverStripe\Core\Injector\Injectable;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\UserDocs\Admin\UserDocsManifest;
+use SilverStripe\UserDocs\Markdown\ExtensionDocAssembler;
 use TeamTNT\TNTSearch\Engines\EngineInterface;
 use TeamTNT\TNTSearch\Engines\MysqlEngine;
 use TeamTNT\TNTSearch\Engines\RedisEngine;
@@ -333,7 +334,8 @@ class SearchIndex implements Flushable
             return '';
         }
         // Use all text except excluded nodes, so matches in headings are included in the summary.
-        $text = $this->getNodeText($this->parseDocument($pageData['filePath']));
+        // Warnings are logged when the page is indexed, so don't log them again for each summary.
+        $text = $this->getNodeText($this->parseDocument($pageData, false));
         // Remove stop words so they don't affect where the summary starts and aren't highlighted.
         // Add words with the same stem so the summary shows the words that matched the search.
         $query = implode(' ', $this->expandQuery($query, $locale));
@@ -532,7 +534,7 @@ class SearchIndex implements Flushable
      */
     private function getTextForPage(array $docDatum, array $zones): array
     {
-        $document = $this->parseDocument($docDatum['filePath']);
+        $document = $this->parseDocument($docDatum, true);
         // Get zone text first, because this removes the zone nodes from the document.
         $textByZone = $this->extractTextForZones($zones, $docDatum['title'], $document);
         $bodyText = $this->getNodeText($document);
@@ -720,14 +722,19 @@ class SearchIndex implements Flushable
     }
 
     /**
-     * Parse the markdown file and remove excluded nodes from the document.
+     * Parse the markdown of the doc and its extension docs, and remove excluded nodes from the document.
+     *
+     * @param bool $logWarnings Whether to log warnings about extension markers in the docs
      */
-    private function parseDocument(string $filePath): Document
+    private function parseDocument(array $docDatum, bool $logWarnings): Document
     {
+        $assembler = ExtensionDocAssembler::singleton();
         /** @var MarkdownConverter $converter */
         $converter = Injector::inst()->create(MarkdownConverter::class . '.userdocs');
-        $parser = Injector::inst()->create(MarkdownParser::class, $converter->getEnvironment());
-        $document = $parser->parse(file_get_contents($filePath));
+        $environment = $converter->getEnvironment();
+        $assembler->addToEnvironment($environment, $docDatum, $logWarnings);
+        $parser = Injector::inst()->create(MarkdownParser::class, $environment);
+        $document = $parser->parse($assembler->getMarkdown($docDatum));
         $this->removeExcludedNodes($document);
         return $document;
     }

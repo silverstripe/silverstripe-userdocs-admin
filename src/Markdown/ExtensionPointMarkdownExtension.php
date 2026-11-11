@@ -65,16 +65,20 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
 
     private array $extensionData;
 
+    private bool $logWarnings;
+
     private ?ConfigurationInterface $config = null;
 
     /**
      * @param array $docData Metadata for the doc from UserDocsManifest
      * @param array $extensionData Metadata for docs whose content is appended to this doc
+     * @param bool $logWarnings Whether to log warnings about invalid markers
      */
-    public function __construct(array $docData, array $extensionData = [])
+    public function __construct(array $docData, array $extensionData = [], bool $logWarnings = true)
     {
         $this->docData = $docData;
         $this->extensionData = $extensionData;
+        $this->logWarnings = $logWarnings;
     }
 
     public function setConfiguration(ConfigurationInterface $configuration): void
@@ -462,6 +466,9 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
 
     private function warn(array $section, string $message): void
     {
+        if (!$this->logWarnings) {
+            return;
+        }
         $filePath = $section['filePath'] ?? 'an unknown file';
         Injector::inst()->get(LoggerInterface::class)->warning("Documentation at $filePath $message");
     }

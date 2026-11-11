@@ -3,8 +3,6 @@
 namespace SilverStripe\UserDocs\Admin;
 
 use BadMethodCallException;
-use League\CommonMark\Event\DocumentParsedEvent;
-use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
 use League\CommonMark\MarkdownConverter;
 use Normalizer;
 use Override;
@@ -25,8 +23,7 @@ use SilverStripe\ORM\FieldType\DBField;
 use SilverStripe\ORM\FieldType\DBHTMLText;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
 use SilverStripe\UserDocs\Markdown\Breadcrumbs\BreadcrumbsExtension;
-use SilverStripe\UserDocs\Markdown\ExtensionDocMarker;
-use SilverStripe\UserDocs\Markdown\ExtensionPointMarkdownExtension;
+use SilverStripe\UserDocs\Markdown\ExtensionDocAssembler;
 use SilverStripe\UserDocs\Search\SearchForm;
 use SilverStripe\UserDocs\Search\SearchIndex;
 
@@ -169,48 +166,19 @@ class UserDocsAdmin extends LeftAndMain
         if (!$docData || !$docData['hasContent'] || !file_exists($docData['filePath'])) {
             return null;
         }
-        $markdown = file_get_contents($docData['filePath']);
-
-        $extensions = array_values($docData['extensions'] ?? []);
-        $frontMatterParser = (new FrontMatterExtension())->getFrontMatterParser();
-        foreach ($extensions as $i => $extensionDocData) {
-            // Skip extensions that have no content or are the same as the main file
-            $extensionFilePath = $extensionDocData['filePath'];
-            if (
-                $docData['filePath'] === $extensionDocData['filePath']
-                || !$extensionDocData['hasContent']
-                || !file_exists($extensionFilePath)
-            ) {
-                continue;
-            }
-            // Pre-parsing the content with the frontmatter parser ensures we only get the
-            // actual markdown content
-            $parsedExtension = $frontMatterParser->parse(file_get_contents($extensionFilePath));
-            // Add a marker before the extension content, so the markdown extensions know where it starts
-            $marker = ExtensionDocMarker::getMarker($i);
-            $markdown .= "\n\n$marker\n\n" . $parsedExtension->getContent();
-        }
-
+        $assembler = ExtensionDocAssembler::singleton();
         /** @var MarkdownConverter $converter */
         $converter = Injector::inst()->create(MarkdownConverter::class . '.userdocs');
         $environment = $converter->getEnvironment();
-        $baseUrlExtension = BaseUrlMarkdownExtension::create(
+        $environment->addExtension(BaseUrlMarkdownExtension::create(
             $this->Link('docs'),
             $docData,
             $this->Link('image'),
-            $extensions
-        );
-        $environment->addExtension($baseUrlExtension);
+            $assembler->getExtensionData($docData)
+        ));
         $environment->addExtension(BreadcrumbsExtension::create($this->getBreadcrumbsForSlug($slug)));
-        $environment->addExtension(ExtensionPointMarkdownExtension::create($docData, $extensions));
-        // Check the markers before any content is moved or removed, so no hidden marker is missed
-        $environment->addEventListener(
-            DocumentParsedEvent::class,
-            fn (DocumentParsedEvent $event) => ExtensionDocMarker::warnAboutHiddenMarkers($event, $extensions),
-            1000
-        );
-        // The markers are only needed while the document is processed, so don't render them
-        $environment->addEventListener(DocumentParsedEvent::class, [ExtensionDocMarker::class, 'removeMarkers'], -200);
+        $assembler->addToEnvironment($environment, $docData);
+        $markdown = $assembler->getMarkdown($docData);
         $html = $converter->convert($markdown);
         return $html->getContent();
     }
