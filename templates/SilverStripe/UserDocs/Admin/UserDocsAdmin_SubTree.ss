@@ -4,7 +4,7 @@
     <% if $node.slug && $node.hasContent %>
         <%-- IMPORTANT: There MUST NOT be any whitespace between the <a> element and the <ins> element below or it will break things in the JS --%>
         <%-- IMPORTANT: The <ins> element is required by jstree but is hidden because we dont actually want to render an icon there --%>
-        <a title="$node.title.ATT" href="{$controller.Link($controller.join_links('docs', $node.slug)).ATT}" <% if $node.isCurrentPage %>tabindex="0" aria-current="page"<% else_if not $controller.CurrentDocSlug && $node.isFirstPage %>tabindex="0"<% else %>tabindex="-1"<% end_if %>><ins class="jstree-icon" style="display:none;"></ins>
+        <a title="$node.title.ATT" href="{$controller.DocLink($node.slug).ATT}" <% if $node.isCurrentPage %>tabindex="0" aria-current="page"<% else_if not $controller.CurrentDocSlug && $node.isFirstPage %>tabindex="0"<% else %>tabindex="-1"<% end_if %>><ins class="jstree-icon" style="display:none;"></ins>
             <span class="text">
                 <% if $node.isRoot %><strong><% end_if %>$node.title<% if $node.isRoot %></strong><% end_if %>
             </span>

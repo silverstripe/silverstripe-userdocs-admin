@@ -18,7 +18,6 @@ use League\CommonMark\Extension\TableOfContents\TableOfContentsExtension;
 use League\CommonMark\Extension\TableOfContents\TableOfContentsRenderer;
 use League\Config\ConfigurationAwareInterface;
 use League\Config\ConfigurationInterface;
-use Locale;
 use Psr\Log\LoggerInterface;
 use SilverStripe\Control\Controller;
 use SilverStripe\Control\Director;
@@ -67,7 +66,7 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
 
         $hasTableOfContents = false;
         $hasPermalinkExtension = false;
-        $baseUrl = Controller::join_links($this->baseUrl, $this->docData['slug']);
+        $baseUrl = Controller::join_links($this->baseUrl, UserDocsManifest::encodeSlug($this->docData['slug']));
         foreach ($environment->getExtensions() as $extension) {
             if ($extension instanceof TableOfContentsExtension) {
                 $hasTableOfContents = true;
@@ -123,55 +122,71 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
         }
 
         if ($node instanceof Image) {
-            $logger = Injector::inst()->get(LoggerInterface::class);
-            // Locales are a single folder, so the result is the same for all locales
-            $pathInModule = $this->getPathInModule($this->docData['locale'], $url);
-            if ($pathInModule === '..' || str_starts_with($pathInModule, '../')) {
-                $node->setUrl($this->missingImagePath);
-                $docPath = Path::join(
-                    $this->docData['rootPathInModule'],
-                    $this->docData['locale'],
-                    $this->docData['pathFromLocale']
-                );
-                $logger->warning("Image '$url' in '{$this->docData['module']}:$docPath' is outside the module");
-                return;
-            }
-            $missingResourcePath = null;
-            $unexposedResourcePath = null;
-            $resourcesPath = Path::join(Director::publicFolder(), RESOURCES_DIR);
-            // Make sure localised docs can use images from fallback locales
-            foreach (UserDocsManifest::getLocalePriority() as $locale) {
-                $moduleResourcePath = $this->getModuleResourcePath($locale, $url);
-                $resource = ModuleResourceLoader::singleton()->resolveResource($moduleResourcePath);
-                if ($resource instanceof ModuleResource && $resource->exists()) {
-                    // The browser can only load images which are exposed in the public folder
-                    $publicPath = Path::join($resourcesPath, $resource->getRelativePath());
-                    if (file_exists($publicPath)) {
-                        $node->setUrl($resource->getURL());
-                        return;
-                    }
-                    $unexposedResourcePath ??= $moduleResourcePath;
-                }
-                if ($locale === $this->docData['locale']) {
-                    $missingResourcePath = $moduleResourcePath;
-                }
-            }
+            $this->updateImageUrl($node, $url);
+        } else {
+            $this->updateLinkUrl($node, $url);
+        }
+    }
+
+    /**
+     * Set the image URL to the public URL of the module resource it refers to.
+     * Uses the missing image placeholder and logs a warning if the image can't be shown.
+     */
+    private function updateImageUrl(Image $node, string $url): void
+    {
+        $logger = Injector::inst()->get(LoggerInterface::class);
+        // Locales are a single folder, so the result is the same for all locales
+        $pathInModule = $this->getPathInModule($this->docData['locale'], $url);
+        if ($pathInModule === '..' || str_starts_with($pathInModule, '../')) {
             $node->setUrl($this->missingImagePath);
-            if ($unexposedResourcePath) {
-                $logger->warning("Image '$unexposedResourcePath' is not exposed in the public folder");
-                return;
-            }
-            if (!$missingResourcePath) {
-                $missingResourcePath = $this->getModuleResourcePath($this->docData['locale'], $url);
-            }
-            $logger->warning("Could not find image '$missingResourcePath'");
+            $docPath = Path::join(
+                $this->docData['rootPathInModule'],
+                $this->docData['locale'],
+                $this->docData['pathFromLocale']
+            );
+            $logger->warning("Image '$url' in '{$this->docData['module']}:$docPath' is outside the module");
             return;
         }
+        $missingResourcePath = null;
+        $unexposedResourcePath = null;
+        $resourcesPath = Path::join(Director::publicFolder(), RESOURCES_DIR);
+        // Make sure localised docs can use images from fallback locales
+        foreach (UserDocsManifest::getLocalePriority() as $locale) {
+            $moduleResourcePath = $this->getModuleResourcePath($locale, $url);
+            $resource = ModuleResourceLoader::singleton()->resolveResource($moduleResourcePath);
+            if ($resource instanceof ModuleResource && $resource->exists()) {
+                // The browser can only load images which are exposed in the public folder
+                $publicPath = Path::join($resourcesPath, $resource->getRelativePath());
+                if (file_exists($publicPath)) {
+                    $node->setUrl($resource->getURL());
+                    return;
+                }
+                $unexposedResourcePath ??= $moduleResourcePath;
+            }
+            if ($locale === $this->docData['locale']) {
+                $missingResourcePath = $moduleResourcePath;
+            }
+        }
+        $node->setUrl($this->missingImagePath);
+        if ($unexposedResourcePath) {
+            $logger->warning("Image '$unexposedResourcePath' is not exposed in the public folder");
+            return;
+        }
+        if (!$missingResourcePath) {
+            $missingResourcePath = $this->getModuleResourcePath($this->docData['locale'], $url);
+        }
+        $logger->warning("Could not find image '$missingResourcePath'");
+    }
 
+    /**
+     * Make the link URL relative to the base URL of the documentation.
+     */
+    private function updateLinkUrl(AbstractWebResource $node, string $url): void
+    {
         $url = $this->addFragmentPrefix($url);
         $urlParts = [$this->baseUrl];
         if (str_starts_with($url, '#')) {
-            $urlParts[] = $this->docData['slug'];
+            $urlParts[] = UserDocsManifest::encodeSlug($this->docData['slug']);
             $urlParts[] = $url;
         } elseif (str_starts_with($url, '/')) {
             $urlParts[] = $url;
@@ -180,7 +195,8 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
             $dir = $this->docData['isIndex'] ? $this->docData['slug'] : dirname($this->docData['slug']);
             // Keep any query string or anchor out of the path so it can't change how the path resolves
             $pathLength = strcspn($url, '?#');
-            $urlParts[] = Path::join($dir, substr($url, 0, $pathLength)) . substr($url, $pathLength);
+            $urlParts[] = Path::join(UserDocsManifest::encodeSlug($dir), substr($url, 0, $pathLength))
+                . substr($url, $pathLength);
         }
 
         $node->setUrl(Controller::join_links(...$urlParts));

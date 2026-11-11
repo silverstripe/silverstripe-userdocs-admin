@@ -2,31 +2,18 @@
 
 namespace SilverStripe\UserDocs\Admin;
 
-use League\CommonMark\ConverterInterface;
-use League\CommonMark\Environment\Environment;
-use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
-use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
-use League\CommonMark\Extension\GithubFlavoredMarkdownExtension;
-use League\CommonMark\Extension\HeadingPermalink\HeadingPermalinkExtension;
-use League\CommonMark\Extension\TableOfContents\TableOfContentsExtension;
 use League\CommonMark\MarkdownConverter;
 use Normalizer;
 use Override;
-use PomoDocs\CommonMark\Alert\AlertExtension;
 use SilverStripe\Admin\LeftAndMain;
 use SilverStripe\Control\Controller;
 use SilverStripe\Control\HTTPRequest;
 use SilverStripe\Control\HTTPResponse;
 use SilverStripe\Control\HTTPResponse_Exception;
-use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\i18n\i18n;
-use SilverStripe\ORM\DataObject;
 use SilverStripe\ORM\FieldType\DBField;
 use SilverStripe\ORM\FieldType\DBHTMLText;
-use SilverStripe\ORM\Hierarchy\MarkedSet;
-use SilverStripe\Security\InheritedPermissions;
-use SilverStripe\Security\PermissionCheckable;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
 
 /**
@@ -154,6 +141,14 @@ class UserDocsAdmin extends LeftAndMain
     }
 
     /**
+     * Get the URL of the doc with the given slug.
+     */
+    public function getDocLink(string $slug): string
+    {
+        return Controller::join_links($this->Link('docs'), UserDocsManifest::encodeSlug($slug));
+    }
+
+    /**
      * Get a doc slug in a format that is safe to use as an ID in a URL.
      *
      * @param string|null $slug The slug to convert. If null, the current doc slug is used.
@@ -169,7 +164,8 @@ class UserDocsAdmin extends LeftAndMain
         // The slug will be included in the URL using rawurlencode,
         // but some Apache configurations won't allow an encoded
         // slash, so we have to replace it with something else first.
-        return str_replace('/', '__SLASH__', $slug);
+        // Dots are replaced so that the URL isn't read as having a file extension.
+        return str_replace(['/', '.'], ['__SLASH__', '__DOT__'], $slug);
     }
 
     private function getCurrentDocSlugFromId(?string $id): string
@@ -178,7 +174,7 @@ class UserDocsAdmin extends LeftAndMain
             return '';
         }
         // Reverse the replacement from getCurrentDocSlugAsId
-        return str_replace('__SLASH__', '/', $id);
+        return str_replace(['__SLASH__', '__DOT__'], ['/', '.'], $id);
     }
 
     /**
@@ -205,7 +201,7 @@ class UserDocsAdmin extends LeftAndMain
 
     /**
      * Get the jstree marking classes for this node.
-     * Derived from MarkedSet::markingClasses()
+     * Derived from SilverStripe\ORM\Hierarchy\MarkedSet::markingClasses()
      */
     private function getMarkingClasses(array $node): string
     {

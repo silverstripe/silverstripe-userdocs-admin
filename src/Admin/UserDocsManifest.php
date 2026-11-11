@@ -69,6 +69,13 @@ class UserDocsManifest implements Flushable
      */
     private array $localisedDocData = [];
 
+    /**
+     * Collators used to sort docs, keyed by locale and whether they compare numbers by value.
+     *
+     * @var Collator[]
+     */
+    private array $collators = [];
+
     public static function flush(): void
     {
         Injector::inst()->get(CacheInterface::class . '.userdocsmanifest')->clear();
@@ -105,7 +112,7 @@ class UserDocsManifest implements Flushable
         if (
             $this->cache
             && ($data = $this->cache->get(static::CACHE_KEY))
-            && $this->loadState($data)
+            && $this->setManifestData($data)
         ) {
             return;
         }
@@ -121,7 +128,7 @@ class UserDocsManifest implements Flushable
     public function regenerate(array $validPaths, bool $includeTests): void
     {
         // Reset the manifest so stale info doesn't cause errors.
-        $this->loadState([]);
+        $this->setManifestData([]);
         // Get metadata about all user documentation
         $docData = [];
         $finder = new ManifestFileFinder();
@@ -140,7 +147,7 @@ class UserDocsManifest implements Flushable
         $data = [
             'docData' => $this->sortModulesByPriority($docData),
         ];
-        $this->loadState($data);
+        $this->setManifestData($data);
         if ($this->cache) {
             $this->cache->set(static::CACHE_KEY, $data);
         }
@@ -199,46 +206,124 @@ class UserDocsManifest implements Flushable
      */
     private function sortDocData(array $docData, string $locale): array
     {
-        // Compare text using the rules of the language, so case and accents don't put words out of order
-        $collator = new Collator($locale);
-        uasort($docData, function (array $a, array $b) use ($collator) {
-            // If both have order, compare by order first (regardless of directory)
-            // This ensures siblings with order are sorted together
-            if ($a['order'] !== null && $b['order'] !== null) {
-                // If orders are different, sort by order
-                if ($a['order'] !== $b['order']) {
-                    return $a['order'] <=> $b['order'];
-                }
-                // Both are folders or both are files, fall through to directory/title comparison
-            }
-
-            // If one document is an index file, it comes first
-            // Orders are the same - folders come before files
-            // isIndex = true means it's a folder (index.md)
-            // isIndex = false means it's a regular file
-            if ($a['isIndex'] !== $b['isIndex']) {
-                return $a['isIndex'] ? -1 : 1;
-            }
-
-            // If files are in different directories use absolute paths to determine order
-            $dirA = dirname($a['filePath']);
-            $dirB = dirname($b['filePath']);
-            if ($dirA !== $dirB) {
-                return $collator->compare($dirA, $dirB);
-            }
-
-            // If only one has order, it comes first
-            if ($a['order'] !== null) {
-                return -1;
-            }
-            if ($b['order'] !== null) {
-                return 1;
-            }
-
-            // Compare alphabetically against file titles
-            return $collator->compare($a['title'], $b['title']);
-        });
+        // Check the type of each title once, instead of once for each comparison
+        $sortTitles = [];
+        foreach ($docData as $docDatum) {
+            $title = $docDatum['title'];
+            $sortTitles[$docDatum['slug']] = [
+                'title' => $title,
+                'isNumeric' => $this->isNumericTitle($title),
+                'isVersion' => $this->isVersionTitle($title),
+            ];
+        }
+        uasort($docData, fn (array $a, array $b) => $this->compareDocData($a, $b, $locale, $sortTitles));
         return $docData;
+    }
+
+    /**
+     * Compare two docs for uasort(), so they're in the order they appear in the navigation tree.
+     * Roots come first, then docs are grouped by parent. See compareSiblings() for the order in each group.
+     *
+     * @param array $sortTitles The sort title of each doc and whether it's a number or version, keyed by slug
+     */
+    private function compareDocData(array $a, array $b, string $locale, array $sortTitles): int
+    {
+        $isRootA = $a['parentSlug'] === '.';
+        $isRootB = $b['parentSlug'] === '.';
+        if ($isRootA !== $isRootB) {
+            return $isRootA ? -1 : 1;
+        }
+        if ($a['parentSlug'] !== $b['parentSlug']) {
+            return strcmp($a['parentSlug'], $b['parentSlug']);
+        }
+        return $this->compareSiblings($a, $b, $locale, $sortTitles);
+    }
+
+    /**
+     * Compare two docs that have the same parent.
+     * This follows the rules of the navigation on docs.silverstripe.org, but compares the localised titles
+     * using the rules of the given locale, so localised docs are in the order of their own language.
+     */
+    private function compareSiblings(array $a, array $b, string $locale, array $sortTitles): int
+    {
+        $isFolderA = $this->isFolder($a);
+        $isFolderB = $this->isFolder($b);
+        if ($a['order'] !== null && $b['order'] !== null) {
+            if ($a['order'] !== $b['order']) {
+                return $a['order'] <=> $b['order'];
+            }
+            if ($isFolderA !== $isFolderB) {
+                return $isFolderA ? -1 : 1;
+            }
+            return $this->compareTitles($a, $b, $locale, $sortTitles);
+        }
+        if ($isFolderA !== $isFolderB) {
+            return $isFolderA ? 1 : -1;
+        }
+        if ($a['order'] !== null) {
+            return -1;
+        }
+        if ($b['order'] !== null) {
+            return 1;
+        }
+        return $this->compareTitles($a, $b, $locale, $sortTitles);
+    }
+
+    /**
+     * Compare the titles of two docs. Numbers and version numbers are compared by value.
+     * Docs with titles that are equal to the collator are compared by path, so the order is always the same.
+     */
+    private function compareTitles(array $a, array $b, string $locale, array $sortTitles): int
+    {
+        $titleA = $sortTitles[$a['slug']];
+        $titleB = $sortTitles[$b['slug']];
+        $isNumeric = ($titleA['isNumeric'] && $titleB['isNumeric']) || ($titleA['isVersion'] && $titleB['isVersion']);
+        return $this->getCollator($locale, $isNumeric)->compare($titleA['title'], $titleB['title'])
+            ?: strcmp($a['pathFromLocale'], $b['pathFromLocale']);
+    }
+
+    /**
+     * Check if the doc is a folder, either with an index.md file or as a root without one.
+     */
+    private function isFolder(array $docDatum): bool
+    {
+        return $docDatum['isIndex'] || $this->isRootWithoutIndex($docDatum);
+    }
+
+    /**
+     * Check if the title is a number in the formats that JavaScript's Number() accepts.
+     */
+    private function isNumericTitle(string $title): bool
+    {
+        $title = trim($title);
+        return $title === ''
+            || is_numeric($title)
+            || preg_match('/^([+-]?Infinity|0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+)\z/', $title);
+    }
+
+    /**
+     * Check if the title is a semantic version number, such as "1.2.3" or "1.2.3-beta1".
+     */
+    private function isVersionTitle(string $title): bool
+    {
+        return (bool) preg_match('/^\d+\.\d+\.\d+(-(alpha|beta|rc)\d*)?\z/', $title);
+    }
+
+    /**
+     * Get a collator that compares strings the same way as JavaScript's
+     * localeCompare() with "case" sensitivity, using the rules of the given locale.
+     */
+    private function getCollator(string $locale, bool $isNumeric): Collator
+    {
+        $key = $locale . ($isNumeric ? '|numeric' : '');
+        if (!isset($this->collators[$key])) {
+            $collator = new Collator($locale);
+            $collator->setStrength(Collator::PRIMARY);
+            $collator->setAttribute(Collator::CASE_LEVEL, Collator::ON);
+            $collator->setAttribute(Collator::NUMERIC_COLLATION, $isNumeric ? Collator::ON : Collator::OFF);
+            $this->collators[$key] = $collator;
+        }
+        return $this->collators[$key];
     }
 
     private function findBasePath(string $filePath, array $validPaths): string|false
@@ -261,16 +346,7 @@ class UserDocsManifest implements Flushable
      */
     public function handleFile(array &$data, string $fileName, string $filePath, string $basePath): void
     {
-        if (!is_dir($filePath)) {
-            // ONLY parse the frontmatter at this stage
-            $frontMatterExtension = new FrontMatterExtension();
-            $result = $frontMatterExtension->getFrontMatterParser()->parse(file_get_contents($filePath));
-            $frontMatter = $result->getFrontMatter();
-            $hasContent = !empty(trim($result->getContent()));
-        } else {
-            $frontMatter = [];
-            $hasContent = false;
-        }
+        [$frontMatter, $hasContent] = $this->readFrontMatter($filePath);
         $isIndex = $fileName === 'index.md';
         $moduleObj = ModuleLoader::inst()->getManifest()->getModuleByPath($filePath);
         $module = $moduleObj->getName();
@@ -280,13 +356,7 @@ class UserDocsManifest implements Flushable
         $pathFromLocale = ltrim(FilesystemPath::makeRelative($pathFromBase, $locale), '/');
         $isRootDir = is_dir($filePath) && !str_contains($pathFromLocale, '/');
         if (!$isRootDir) {
-            // Validate there's a root
-            $dir = dirname($pathFromLocale);
-            if ($dir === '.' || $dir === '/' || $dir === '\\') {
-                throw new InvalidArgumentException(
-                    'User documentation files must have at least one directory between the locale and file.'
-                );
-            }
+            $this->validateHasRootDir($pathFromLocale);
         }
         $slug = $this->getSlugForPath($pathFromLocale, $isRootDir);
         $parentSlug = dirname($slug);
@@ -308,10 +378,11 @@ class UserDocsManifest implements Flushable
             $this->handleFile($data, $rootDirName, Path::join($basePathWithLocale, $rootDirName), $basePath);
         }
 
+        $title = trim($frontMatter['title'] ?? '');
         $data[$module][$locale][$slug] = [
             'order' => $this->extractOrderFromFilename($isIndex ? basename(dirname($filePath)) : $fileName),
             'frontMatter' => $frontMatter,
-            'title' => $frontMatter['title'] ?? $this->filenameToTitle($fileName, $filePath),
+            'title' => $title !== '' ? $title : $this->fileNameToTitle($fileName, $filePath),
             'isIndex' => $isIndex,
             'hasContent' => $hasContent,
             'fileName' => $fileName,
@@ -327,12 +398,31 @@ class UserDocsManifest implements Flushable
     }
 
     /**
-     * Get the doc data for every module and locale.
-     * The data is keyed by module (from the highest to the lowest priority), then locale, then slug.
+     * Parse only the front matter of the file. Directories have no front matter and no content.
+     *
+     * @return array The front matter, then whether the file has content after the front matter
      */
-    public function getState(?string $locale = null): array
+    private function readFrontMatter(string $filePath): array
     {
-        return $this->docData;
+        if (is_dir($filePath)) {
+            return [[], false];
+        }
+        $frontMatterExtension = new FrontMatterExtension();
+        $result = $frontMatterExtension->getFrontMatterParser()->parse(file_get_contents($filePath));
+        return [$result->getFrontMatter(), !empty(trim($result->getContent()))];
+    }
+
+    /**
+     * Check that there's at least one directory between the locale and the file.
+     */
+    private function validateHasRootDir(string $pathFromLocale): void
+    {
+        $dir = dirname($pathFromLocale);
+        if ($dir === '.' || $dir === '/' || $dir === '\\') {
+            throw new InvalidArgumentException(
+                'User documentation files must have at least one directory between the locale and file.'
+            );
+        }
     }
 
     /**
@@ -379,6 +469,7 @@ class UserDocsManifest implements Flushable
 
     /**
      * Get the URL slug for the given documentation file/folder path.
+     * The slug for an index file with no directory, such as "index.md", is ".".
      */
     public function getSlugForPath(string $path, bool $isRootDir = false): string
     {
@@ -408,6 +499,24 @@ class UserDocsManifest implements Flushable
     }
 
     /**
+     * Encode each segment of the slug so that it can be used in a URL.
+     * Dots are encoded so that the URL isn't read as having a file extension,
+     * except in "." and ".." segments.
+     */
+    public static function encodeSlug(string $slug): string
+    {
+        $segments = [];
+        foreach (explode('/', $slug) as $segment) {
+            if ($segment === '.' || $segment === '..') {
+                $segments[] = $segment;
+            } else {
+                $segments[] = str_replace('.', '%2E', rawurlencode($segment));
+            }
+        }
+        return implode('/', $segments);
+    }
+
+    /**
      * A root folder without an index.md file only has placeholder data,
      * so it must not replace data for the same root from another locale or module.
      */
@@ -417,17 +526,15 @@ class UserDocsManifest implements Flushable
     }
 
     /**
-     * Reload state from given cache data
+     * Set the manifest properties from cached or newly built data, and clear the data worked out from them.
+     * Properties that are missing or invalid in the data are reset, so empty data resets the manifest.
      *
-     * @return bool True if cache was valid and successfully loaded
+     * @return bool True if the data was valid and the properties were set
      */
-    protected function loadState(array $data): bool
+    protected function setManifestData(array $data): bool
     {
         $this->localisedDocData = [];
         $success = true;
-        if (empty($data)) {
-            return $success;
-        }
         foreach ($this->cachedProperties as $property) {
             if (!isset($data[$property]) || !is_array($data[$property])) {
                 $success = false;

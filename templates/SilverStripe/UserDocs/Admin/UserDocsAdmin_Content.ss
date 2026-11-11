@@ -1,7 +1,7 @@
 <% if $CurrentDocSlug %>
-<%-- Left and right panel together (i.e. we are viewing a docc page) --%>
+<%-- Left and right panel together (i.e. we are viewing a doc page) --%>
 <div class="has-panel cms-content flexbox-area-grow fill-width fill-height $BaseCSSClasses" data-layout-type="border" data-pjax-fragment="Content">
-	<%-- Tools includes the left panel --%>
+    <%-- Tools includes the left panel --%>
     $Tools
     <%-- The rest of this is the right panel --%>
     <div class="fill-height flexbox-area-grow">
@@ -18,10 +18,10 @@
                 </div>
             </div>
         </div>
-		<div class="panel panel--padded panel--scrollable flexbox-area-grow fill-height userdocs-content"<% if $CurrentDocLang %> lang="$CurrentDocLang.ATT"<% end_if %>>
+        <div class="panel panel--padded panel--scrollable flexbox-area-grow fill-height userdocs-content"<% if $CurrentDocLang %> lang="$CurrentDocLang.ATT"<% end_if %>>
             $RenderedDocs
-		</div>
-	</div>
+        </div>
+    </div>
     <%-- Flyout tree menu for short-width windows --%>
     <div id="docs-tree-flyout-menu" class="flyout-menu" tabindex="-1">
         <div class="flyout-menu__tree panel panel--scrollable cms-panel-content flexbox-area-grow fill-height">

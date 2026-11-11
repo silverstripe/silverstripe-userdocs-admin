@@ -1,0 +1,7 @@
+---
+title: Voiture
+---
+
+# Voiture
+
+Content.

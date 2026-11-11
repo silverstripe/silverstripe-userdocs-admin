@@ -154,6 +154,30 @@ class UserDocsAdminTest extends FunctionalTest
         $this->assertStringContainsString('>Été indien<', $response->getBody());
     }
 
+    public function testDocsWithDotInSlug(): void
+    {
+        $this->useSpecialCharsFixtures();
+
+        $response = $this->get('admin/user-docs/docs/section/release%2Enotes');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertStringContainsString('>Release notes<', $response->getBody());
+    }
+
+    public function testDocsWithSpecialCharacters(): void
+    {
+        $this->useSpecialCharsFixtures();
+
+        $response = $this->get('admin/user-docs/docs/section/c%23%20%26%20100%25');
+
+        $this->assertSame(200, $response->getStatusCode());
+        // The heading permalink uses the URL of the doc
+        $this->assertStringContainsString(
+            'href="admin/user-docs/docs/section/c%23%20%26%20100%25#userdocs-a-heading"',
+            $response->getBody()
+        );
+    }
+
     public static function provideGetCurrentDocLang(): array
     {
         return [
@@ -226,6 +250,39 @@ class UserDocsAdminTest extends FunctionalTest
         );
     }
 
+    public function testTreeviewWithSpecialCharacters(): void
+    {
+        $this->useSpecialCharsFixtures();
+
+        $response = $this->get('admin/user-docs/treeview');
+
+        $this->assertMatchesRegularExpression($this->openingTagPattern('a', [
+            'href' => 'admin/user-docs/docs/section/c%23%20%26%20100%25',
+        ]), $response->getBody());
+    }
+
+    public function testTreeviewWithDotInSlug(): void
+    {
+        $this->useSpecialCharsFixtures();
+
+        $response = $this->get('admin/user-docs/treeview/section__SLASH__release__DOT__notes');
+
+        $this->assertMatchesRegularExpression($this->openingTagPattern('a', [
+            'href' => 'admin/user-docs/docs/section/release%2Enotes',
+            'aria-current' => 'page',
+        ]), $response->getBody());
+    }
+
+    public function testGetDocLink(): void
+    {
+        $admin = UserDocsAdmin::singleton();
+
+        $this->assertSame(
+            $admin->Link('docs/' . UserDocsManifest::encodeSlug('section/c# & 100%')),
+            $admin->getDocLink('section/c# & 100%')
+        );
+    }
+
     public static function provideGetCurrentDocSlugAsId(): array
     {
         return [
@@ -244,6 +301,11 @@ class UserDocsAdminTest extends FunctionalTest
                 'slug' => 'title_only/page',
                 'expected' => 'title_only__SLASH__page',
             ],
+            'slug with dots' => [
+                'currentSlug' => 'section/release.notes',
+                'slug' => null,
+                'expected' => 'section__SLASH__release__DOT__notes',
+            ],
         ];
     }
 
@@ -259,6 +321,13 @@ class UserDocsAdminTest extends FunctionalTest
     {
         UserDocsManifest::config()->set('documentation_roots', [
             'silverstripe/userdocs-admin:tests/php/fixtures/localisation' => true,
+        ]);
+    }
+
+    private function useSpecialCharsFixtures(): void
+    {
+        UserDocsManifest::config()->set('documentation_roots', [
+            'silverstripe/userdocs-admin:tests/php/fixtures/special_chars' => true,
         ]);
     }
 

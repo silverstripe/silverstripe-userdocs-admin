@@ -6,6 +6,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
+use ReflectionProperty;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Core\Manifest\ModuleLoader;
 use SilverStripe\Core\Manifest\ModuleManifest;
@@ -43,7 +44,7 @@ class UserDocsManifestTest extends SapphireTest
 
     public function testHandleFile(): void
     {
-        $docData = $this->getDocsManifest()->getState()[static::MODULE]['en'];
+        $docData = $this->getRawDocData($this->getDocsManifest())[static::MODULE]['en'];
         $fixturePath = $this->fixturePath('docs/en/01_getting_started');
 
         $this->assertSame([
@@ -135,15 +136,27 @@ class UserDocsManifestTest extends SapphireTest
 
     public function testHandleFileWithFrontMatterOnly(): void
     {
-        $docData = $this->getDocsManifest()->getState()[static::MODULE]['en'];
+        $docData = $this->getRawDocData($this->getDocsManifest())[static::MODULE]['en'];
 
         $this->assertSame('Title only', $docData['title_only']['title']);
         $this->assertFalse($docData['title_only']['hasContent']);
     }
 
+    public function testHandleFileWithBlankTitle(): void
+    {
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('blank_title')], true);
+        $titles = array_column($this->getRawDocData($manifest)[static::MODULE]['en'], 'title', 'fileName');
+
+        $this->assertSame('Section', $titles['index.md']);
+        $this->assertSame('Empty title', $titles['empty_title.md']);
+        $this->assertSame('Padded title', $titles['padded_title.md']);
+    }
+
     public function testFileNameToTitle(): void
     {
-        $titles = array_column($this->getDocsManifest()->getState()[static::MODULE]['fr'], 'title', 'fileName');
+        $docData = $this->getRawDocData($this->getDocsManifest())[static::MODULE]['fr'];
+        $titles = array_column($docData, 'title', 'fileName');
 
         $this->assertSame('Étapes suivantes', $titles['03_étapes_suivantes.md']);
         $this->assertSame('Été indien', $titles['04_ÉTÉ_INDIEN.md']);
@@ -203,6 +216,22 @@ class UserDocsManifestTest extends SapphireTest
                 'isRootDir' => true,
                 'expected' => 'section',
             ],
+            // Links to the index file of the folder the linking doc is in
+            'index file without a directory' => [
+                'path' => 'index.md',
+                'isRootDir' => false,
+                'expected' => '.',
+            ],
+            'index file in the current directory' => [
+                'path' => './index.md',
+                'isRootDir' => false,
+                'expected' => '.',
+            ],
+            'index file in the parent directory' => [
+                'path' => '../index.md',
+                'isRootDir' => false,
+                'expected' => '..',
+            ],
         ];
     }
 
@@ -218,8 +247,34 @@ class UserDocsManifestTest extends SapphireTest
         // so its files must not show up (e.g. as a bogus "_sibling" locale)
         $this->assertEqualsCanonicalizing(
             ['en', 'fr', 'fr_CA'],
-            array_keys($this->getDocsManifest()->getState()[static::MODULE])
+            array_keys($this->getRawDocData($this->getDocsManifest())[static::MODULE])
         );
+    }
+
+    public static function provideGetLocalisedDocDataSortsByLocalisedTitle(): array
+    {
+        return [
+            // "Car" and "House"
+            'English' => [
+                'locale' => 'en_US',
+                'expected' => ['section', 'section/car', 'section/house'],
+            ],
+            // "Maison" and "Voiture"
+            'French' => [
+                'locale' => 'fr_FR',
+                'expected' => ['section', 'section/house', 'section/car'],
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetLocalisedDocDataSortsByLocalisedTitle')]
+    public function testGetLocalisedDocDataSortsByLocalisedTitle(string $locale, array $expected): void
+    {
+        i18n::set_locale($locale);
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('localised_sorting')], true);
+
+        $this->assertSame($expected, array_keys($manifest->getLocalisedDocData()));
     }
 
     public function testGetLocalisedDocDataSortsWithLocaleRules(): void
@@ -228,15 +283,15 @@ class UserDocsManifestTest extends SapphireTest
         $manifest = new UserDocsManifest();
         $manifest->regenerate([$this->fixturePath('sorting')], true);
 
-        // Folders come first, then pages. Case and accents don't affect the order.
+        // Files come before folders when neither has a prefix. Case and accents don't affect the order.
         $this->assertSame([
             'section',
-            'section/été',
-            'section/zoo',
             'section/apple',
             'section/banane',
             'section/étapes',
             'section/zèbre',
+            'section/été',
+            'section/zoo',
         ], array_keys($manifest->getLocalisedDocData()));
     }
 
@@ -251,7 +306,7 @@ class UserDocsManifestTest extends SapphireTest
     {
         $tree = $this->getDocsManifest()->getLocalisedTreeData();
 
-        // Numeric prefixes first (folders before files when equal), then unprefixed by title
+        // Prefixed files, then unprefixed files sorted by title (from the front matter if set), then the folder
         $this->assertSame([
             'slug' => 'getting_started',
             'title' => 'Start here',
@@ -270,6 +325,18 @@ class UserDocsManifestTest extends SapphireTest
                     'isIndex' => false,
                     'hasContent' => true,
                 ],
+                'zebra' => [
+                    'slug' => 'getting_started/zebra',
+                    'title' => 'Aardvark',
+                    'isIndex' => false,
+                    'hasContent' => true,
+                ],
+                'apple' => [
+                    'slug' => 'getting_started/apple',
+                    'title' => 'Apple',
+                    'isIndex' => false,
+                    'hasContent' => true,
+                ],
                 'nested_section' => [
                     'slug' => 'getting_started/nested_section',
                     'title' => 'Nested section',
@@ -283,18 +350,6 @@ class UserDocsManifestTest extends SapphireTest
                             'hasContent' => true,
                         ],
                     ],
-                ],
-                'zebra' => [
-                    'slug' => 'getting_started/zebra',
-                    'title' => 'Aardvark',
-                    'isIndex' => false,
-                    'hasContent' => true,
-                ],
-                'apple' => [
-                    'slug' => 'getting_started/apple',
-                    'title' => 'Apple',
-                    'isIndex' => false,
-                    'hasContent' => true,
                 ],
             ],
         ], $tree['getting_started']);
@@ -329,6 +384,78 @@ class UserDocsManifestTest extends SapphireTest
                 ],
             ],
         ], $manifest->getLocalisedTreeData()['2024']);
+    }
+
+    public function testGetLocalisedTreeDataWithNumericRootSlugs(): void
+    {
+        // PHP compares numeric strings by value, so "10.0" and "1e1" are equal in a loose comparison.
+        // PHP also changes the "10" slug to an int when it's used as an array key.
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('numeric_roots')], true);
+        $tree = $manifest->getLocalisedTreeData();
+
+        $this->assertSame('Ten', $tree['10']['title'] ?? null);
+        $this->assertSame('Ten point zero', $tree['10.0']['title'] ?? null);
+        $this->assertSame('One e one', $tree['1e1']['title'] ?? null);
+    }
+
+    public static function provideGetLocalisedTreeDataSortOrder(): array
+    {
+        return [
+            'prefixed docs and an unprefixed folder' => [
+                'root' => 'section_a',
+                'expected' => [
+                    'section_a/file',
+                    // Folders come before files with the same prefix
+                    'section_a/folder',
+                    'section_a/same',
+                    // Files with the same prefix are sorted by title
+                    'section_a/a',
+                    'section_a/b',
+                    'section_a/zfolder',
+                ],
+            ],
+            'unprefixed files and a prefixed folder' => [
+                'root' => 'section_b',
+                'expected' => [
+                    // Version numbers and numbers are compared by value
+                    'section_b/1.9.0',
+                    'section_b/1.10.0',
+                    'section_b/9',
+                    'section_b/10',
+                    // Titles are not case sensitive
+                    'section_b/afile',
+                    'section_b/bfile',
+                    // Files come before folders when only one of them has a prefix
+                    'section_b/folder',
+                    'section_b/cfolder',
+                ],
+            ],
+            'titles from frontmatter' => [
+                'root' => 'section_c',
+                'expected' => [
+                    // "Alpha" and "Beta" have the same prefix
+                    'section_c/b',
+                    'section_c/a',
+                    // "Apple" and "Zebra"
+                    'section_c/zzz',
+                    'section_c/aaa',
+                    // "Bee" and "Yak"
+                    'section_c/zfolder',
+                    'section_c/afolder',
+                ],
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetLocalisedTreeDataSortOrder')]
+    public function testGetLocalisedTreeDataSortOrder(string $root, array $expected): void
+    {
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('sort_order')], true);
+        $children = $manifest->getLocalisedTreeData()[$root]['children'] ?? [];
+
+        $this->assertSame($expected, array_column($children, 'slug'));
     }
 
     public static function provideGetLocalisedDocData(): array
@@ -405,6 +532,38 @@ class UserDocsManifestTest extends SapphireTest
 
         $this->assertSame([], $manifest->getLocalisedDocData());
         $this->assertSame([], $manifest->getLocalisedTreeData());
+    }
+
+    public static function provideEncodeSlug(): array
+    {
+        return [
+            'plain slug' => [
+                'slug' => 'section/page',
+                'expected' => 'section/page',
+            ],
+            'characters with a meaning in URLs' => [
+                'slug' => 'section/c# & 100%?',
+                'expected' => 'section/c%23%20%26%20100%25%3F',
+            ],
+            'non-ASCII characters' => [
+                'slug' => 'section/été',
+                'expected' => 'section/%C3%A9t%C3%A9',
+            ],
+            'dots' => [
+                'slug' => 'section/release.notes',
+                'expected' => 'section/release%2Enotes',
+            ],
+            'relative path segments' => [
+                'slug' => '../section/.',
+                'expected' => '../section/.',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideEncodeSlug')]
+    public function testEncodeSlug(string $slug, string $expected): void
+    {
+        $this->assertSame($expected, UserDocsManifest::encodeSlug($slug));
     }
 
     public function testGetLocalisedDocDataWithTranslationWithoutRootIndex(): void
@@ -534,7 +693,7 @@ class UserDocsManifestTest extends SapphireTest
         $manifest = new UserDocsManifest();
         $manifest->init(true);
 
-        $docData = $manifest->getState()[static::MODULE]['en'];
+        $docData = $this->getRawDocData($manifest)[static::MODULE]['en'];
         $this->assertArrayHasKey('getting_started', $docData);
         $this->assertArrayHasKey('sibling_section', $docData);
         $this->assertArrayNotHasKey('section', $docData);
@@ -550,7 +709,7 @@ class UserDocsManifestTest extends SapphireTest
         $manifest = new UserDocsManifest();
         $manifest->init(true);
 
-        $state = $manifest->getState()[static::MODULE];
+        $state = $this->getRawDocData($manifest)[static::MODULE];
         $this->assertSame(['en'], array_keys($state));
         $this->assertSame(['sibling_section', 'sibling_section/page'], array_keys($state['en']));
     }
@@ -565,7 +724,7 @@ class UserDocsManifestTest extends SapphireTest
         $manifest = new UserDocsManifest();
         $manifest->init(true);
 
-        $this->assertArrayHasKey('getting_started', $manifest->getState()[static::MODULE]['en']);
+        $this->assertArrayHasKey('getting_started', $this->getRawDocData($manifest)[static::MODULE]['en']);
     }
 
     public function testInitWithInvalidCache(): void
@@ -576,7 +735,29 @@ class UserDocsManifestTest extends SapphireTest
         $manifest = new UserDocsManifest();
         $manifest->init(true);
 
-        $this->assertArrayHasKey('getting_started', $manifest->getState()[static::MODULE]['en']);
+        $this->assertArrayHasKey('getting_started', $this->getRawDocData($manifest)[static::MODULE]['en']);
+    }
+
+    public function testRegenerateResetsManifest(): void
+    {
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('docs')], true);
+
+        // Regenerating fails part way through, so the old docs must not be left in the manifest
+        try {
+            $manifest->regenerate([$this->fixturePath('invalid')], true);
+        } catch (InvalidArgumentException) {
+        }
+
+        $this->assertSame([], $this->getRawDocData($manifest));
+    }
+
+    /**
+     * Get the doc data the manifest stores, keyed by module, then locale, then slug.
+     */
+    private function getRawDocData(UserDocsManifest $manifest): array
+    {
+        return (new ReflectionProperty(UserDocsManifest::class, 'docData'))->getValue($manifest);
     }
 
     private function getDocsManifest(): UserDocsManifest

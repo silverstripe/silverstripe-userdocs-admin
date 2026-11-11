@@ -1,0 +1,7 @@
+---
+title: Yak
+---
+
+# Yak
+
+Content.

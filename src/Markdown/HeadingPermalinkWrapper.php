@@ -9,10 +9,8 @@ use League\CommonMark\Node\StringContainerHelper;
 use League\CommonMark\Renderer\ChildNodeRendererInterface;
 use League\CommonMark\Renderer\NodeRendererInterface;
 use League\CommonMark\Util\HtmlElement;
-use League\CommonMark\Xml\XmlNodeRendererInterface;
 use League\Config\ConfigurationAwareInterface;
 use League\Config\ConfigurationInterface;
-use SilverStripe\Control\Controller;
 use SilverStripe\Core\Injector\Injectable;
 
 /**
@@ -21,6 +19,7 @@ use SilverStripe\Core\Injector\Injectable;
 class HeadingPermalinkWrapper implements NodeRendererInterface, ConfigurationAwareInterface
 {
     use Injectable;
+    use RewritesAnchorLinks;
 
     private HeadingPermalinkRenderer $innerRenderer;
 
@@ -55,8 +54,7 @@ class HeadingPermalinkWrapper implements NodeRendererInterface, ConfigurationAwa
         }
         $permalinkHtml = (string) $permalink;
 
-        // Rewrite anchor links to include base URL
-        return preg_replace('/href="#([^"]*)"/i', 'href="' . $this->baseUrl . '#$1"', $permalinkHtml);
+        return $this->addBaseUrlToAnchors($permalinkHtml, $this->baseUrl);
     }
 
     public function setConfiguration(ConfigurationInterface $configuration): void

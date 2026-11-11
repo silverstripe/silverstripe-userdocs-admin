@@ -190,6 +190,19 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         $this->assertSame('<p><a href="' . $expected . '">link</a></p>', trim($html));
     }
 
+    public function testOnDocumentParsedLinksEncodesSlug(): void
+    {
+        $docData = ['slug' => 'c# & 100%/page'] + static::docData();
+
+        $html = $this->convert('[link](other) [anchor](#details)', $docData);
+
+        $this->assertSame(
+            '<p><a href="/admin/user-docs/docs/c%23%20%26%20100%25/other">link</a> '
+            . '<a href="/admin/user-docs/docs/c%23%20%26%20100%25/page#details">anchor</a></p>',
+            trim($html)
+        );
+    }
+
     public static function provideOnDocumentParsedImages(): array
     {
         return [
