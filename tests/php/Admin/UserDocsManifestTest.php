@@ -760,6 +760,16 @@ class UserDocsManifestTest extends SapphireTest
         return (new ReflectionProperty(UserDocsManifest::class, 'docData'))->getValue($manifest);
     }
 
+    public function testGetRootPathInModule(): void
+    {
+        $this->assertSame('tests/php/fixtures/docs', $this->getDocsManifest()->getRootPathInModule(static::MODULE));
+    }
+
+    public function testGetRootPathInModuleWithoutDocs(): void
+    {
+        $this->assertNull($this->getDocsManifest()->getRootPathInModule('silverstripe/framework'));
+    }
+
     private function getDocsManifest(): UserDocsManifest
     {
         if (!static::$docsManifest) {

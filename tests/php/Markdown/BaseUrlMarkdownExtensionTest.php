@@ -9,38 +9,20 @@ use League\CommonMark\Extension\TableOfContents\TableOfContentsExtension;
 use League\CommonMark\MarkdownConverter;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
-use SilverStripe\Control\Director;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\Core\Manifest\ModuleLoader;
 use SilverStripe\Core\Manifest\ModuleResourceLoader;
 use SilverStripe\Dev\SapphireTest;
 use SilverStripe\i18n\i18n;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
-use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\Filesystem\Path;
 
 class BaseUrlMarkdownExtensionTest extends SapphireTest
 {
     private const BASE_URL = '/admin/user-docs/docs';
 
-    private Filesystem $filesystem;
+    private const IMAGE_URL = '/admin/user-docs/image';
 
-    private string $tempBaseFolder;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        // Use a temporary public folder so tests control which images are exposed
-        $this->filesystem = new Filesystem();
-        $this->tempBaseFolder = Path::join(TEMP_PATH, 'BaseUrlMarkdownExtensionTest_' . uniqid());
-        $this->filesystem->mkdir(Path::join($this->tempBaseFolder, PUBLIC_DIR));
-        Director::config()->set('alternate_base_folder', $this->tempBaseFolder);
-    }
-
-    protected function tearDown(): void
-    {
-        $this->filesystem->remove($this->tempBaseFolder);
-        parent::tearDown();
-    }
+    private const MODULE = 'silverstripe/userdocs-admin';
 
     private static function docData(): array
     {
@@ -212,6 +194,12 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
                 'url' => 'images/screenshot.png',
                 'expectedPath' => 'tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png',
             ],
+            'image with a file name which CommonMark encodes' => [
+                'locale' => 'en_US',
+                'docData' => static::docData(),
+                'url' => '<images/été screenshot.png>',
+                'expectedPath' => 'tests/php/fixtures/docs/en/01_getting_started/images/été screenshot.png',
+            ],
             'image from index page resolves from its own directory' => [
                 'locale' => 'en_US',
                 'docData' => static::indexDocData(),
@@ -271,64 +259,35 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         string $expectedPath
     ): void {
         i18n::set_locale($locale);
-        $this->exposeResource($expectedPath);
 
         $html = $this->convert("![Alt text]($url)", $docData);
 
-        $expectedUrl = ModuleResourceLoader::resourceURL("silverstripe/userdocs-admin:$expectedPath");
-        $this->assertSame('<p><img src="' . $expectedUrl . '" alt="Alt text" /></p>', trim($html));
+        $filePath = ModuleLoader::getModule(static::MODULE)->getResource($expectedPath)->getPath();
+        $expectedUrl = static::IMAGE_URL . '?' . http_build_query([
+            'module' => static::MODULE,
+            'path' => $expectedPath,
+            'v' => hash_file('xxh3', $filePath),
+        ]);
+        $this->assertSame(
+            '<p><img src="' . htmlspecialchars($expectedUrl) . '" alt="Alt text" /></p>',
+            trim($html)
+        );
     }
 
-    public function testOnDocumentParsedImagesSubfolderSite(): void
-    {
-        Director::config()->set('alternate_base_url', 'https://www.example.com/subfolder/');
-        $path = 'tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png';
-        $this->exposeResource($path);
-
-        $html = $this->convert('![Alt text](images/screenshot.png)', static::docData());
-
-        $expectedUrl = ModuleResourceLoader::resourceURL("silverstripe/userdocs-admin:$path");
-        $this->assertStringStartsWith('/subfolder/', $expectedUrl);
-        $this->assertSame('<p><img src="' . $expectedUrl . '" alt="Alt text" /></p>', trim($html));
-    }
-
-    public function testOnDocumentParsedUnexposedImage(): void
+    public function testOnDocumentParsedImageOutsideRoot(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())
             ->method('warning')
             ->with(
-                "Image 'silverstripe/userdocs-admin:"
-                . "tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png'"
-                . ' is not exposed in the public folder'
+                "Image '../../../composer.json' in 'silverstripe/userdocs-admin:"
+                . "tests/php/fixtures/docs/en/01_getting_started/01_first_page.md' is outside the documentation root"
             );
         Injector::inst()->registerService($logger, LoggerInterface::class);
 
-        $html = $this->convert('![Not exposed](images/screenshot.png)', static::docData());
+        $html = $this->convert('![Outside](../../../composer.json)', static::docData());
 
-        $placeholderUrl = ModuleResourceLoader::resourceURL(
-            'silverstripe/userdocs-admin:client/images/missing-image-placeholder.png'
-        );
-        $this->assertSame('<p><img src="' . $placeholderUrl . '" alt="Not exposed" /></p>', trim($html));
-    }
-
-    public function testOnDocumentParsedImageOutsideModule(): void
-    {
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())
-            ->method('warning')
-            ->with(
-                "Image '../../../../../../../composer.json' in 'silverstripe/userdocs-admin:"
-                . "tests/php/fixtures/docs/en/01_getting_started/01_first_page.md' is outside the module"
-            );
-        Injector::inst()->registerService($logger, LoggerInterface::class);
-
-        $html = $this->convert('![Outside](../../../../../../../composer.json)', static::docData());
-
-        $placeholderUrl = ModuleResourceLoader::resourceURL(
-            'silverstripe/userdocs-admin:client/images/missing-image-placeholder.png'
-        );
-        $this->assertSame('<p><img src="' . $placeholderUrl . '" alt="Outside" /></p>', trim($html));
+        $this->assertSame('<p><img src="' . $this->getPlaceholderUrl() . '" alt="Outside" /></p>', trim($html));
     }
 
     public function testOnDocumentParsedMissingImage(): void
@@ -344,10 +303,23 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
 
         $html = $this->convert('![Missing](images/missing.png)', static::docData());
 
-        $placeholderUrl = ModuleResourceLoader::resourceURL(
-            'silverstripe/userdocs-admin:client/images/missing-image-placeholder.png'
-        );
-        $this->assertSame('<p><img src="' . $placeholderUrl . '" alt="Missing" /></p>', trim($html));
+        $this->assertSame('<p><img src="' . $this->getPlaceholderUrl() . '" alt="Missing" /></p>', trim($html));
+    }
+
+    public function testOnDocumentParsedUnsupportedImage(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with(
+                "Image 'silverstripe/userdocs-admin:"
+                . "tests/php/fixtures/docs/en/01_getting_started/02_second_page.md' is not a supported type of image"
+            );
+        Injector::inst()->registerService($logger, LoggerInterface::class);
+
+        $html = $this->convert('![Not an image](02_second_page.md)', static::docData());
+
+        $this->assertSame('<p><img src="' . $this->getPlaceholderUrl() . '" alt="Not an image" /></p>', trim($html));
     }
 
     public function testRegister(): void
@@ -377,15 +349,10 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         $this->assertStringNotContainsString('href="#', $html);
     }
 
-    /**
-     * Copy a file from this module into the temporary public folder, as if it was exposed.
-     */
-    private function exposeResource(string $path): void
+    private function getPlaceholderUrl(): string
     {
-        $resource = ModuleResourceLoader::singleton()->resolveResource("silverstripe/userdocs-admin:$path");
-        $this->filesystem->copy(
-            $resource->getPath(),
-            Path::join(Director::publicFolder(), RESOURCES_DIR, $resource->getRelativePath())
+        return ModuleResourceLoader::resourceURL(
+            'silverstripe/userdocs-admin:client/images/missing-image-placeholder.png'
         );
     }
 
@@ -395,7 +362,7 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
             $environment = new Environment();
             $environment->addExtension(new CommonMarkCoreExtension());
         }
-        $environment->addExtension(new BaseUrlMarkdownExtension(static::BASE_URL, $docData));
+        $environment->addExtension(new BaseUrlMarkdownExtension(static::BASE_URL, $docData, static::IMAGE_URL));
         return (new MarkdownConverter($environment))->convert($markdown)->getContent();
     }
 }

@@ -36,6 +36,8 @@ Assuming Module two has the higher priority, the documentation navigation tree w
 
 Note that the documentation from module two for "Navigation menus" completely overrides the docs from module one for the same file - but where they both provide separate docs, the docs seamlessly merge together into the tree.
 
+Images aren't shared between modules. If your override uses an image from the documentation it replaces, copy the image into your own documentation root (see [images in docs](./writing_documentation#images-in-docs)).
+
 > [!TIP]
 > The numeric prefix is allowed to differ between your override folder/file and the original. It will still override the content and also update the ordering of the documentation.
 

@@ -426,6 +426,22 @@ class UserDocsManifest implements Flushable
     }
 
     /**
+     * Get the path to the documentation root in the given module.
+     *
+     * @return string|null The path relative to the module root, or null if the module has no docs
+     */
+    public function getRootPathInModule(string $module): ?string
+    {
+        // All docs in a module have the same root, so use the first one
+        foreach ($this->docData[$module] ?? [] as $localeData) {
+            foreach ($localeData as $docDatum) {
+                return $docDatum['rootPathInModule'];
+            }
+        }
+        return null;
+    }
+
+    /**
      * Get all data about documentation for the current locale.
      *
      * For each doc, the module with the highest priority that has the doc in any of the current locales is used.
