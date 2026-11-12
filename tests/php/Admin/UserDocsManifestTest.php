@@ -534,6 +534,63 @@ class UserDocsManifestTest extends SapphireTest
         $this->assertSame([], $manifest->getLocalisedTreeData());
     }
 
+    public static function provideGetBreadcrumbs(): array
+    {
+        return [
+            'root' => [
+                'locale' => 'en_US',
+                'slug' => 'getting_started',
+                'expected' => [],
+            ],
+            'nested page' => [
+                'locale' => 'en_US',
+                'slug' => 'getting_started/nested_section/child_page',
+                'expected' => [
+                    ['title' => 'Start here', 'href' => 'base/docs/getting_started'],
+                    ['title' => 'Nested section', 'href' => 'base/docs/getting_started/nested_section'],
+                ],
+            ],
+            // The page has no French translation, but its parent does
+            'translated ancestor' => [
+                'locale' => 'fr_FR',
+                'slug' => 'getting_started/first_page',
+                'expected' => [
+                    ['title' => 'Commencer', 'href' => 'base/docs/getting_started'],
+                ],
+            ],
+            'ancestor without content' => [
+                'locale' => 'en_US',
+                'slug' => 'no_index/some_page',
+                'expected' => [
+                    ['title' => 'No index', 'href' => null],
+                ],
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetBreadcrumbs')]
+    public function testGetBreadcrumbs(string $locale, string $slug, array $expected): void
+    {
+        i18n::set_locale($locale);
+
+        $breadcrumbs = $this->getDocsManifest()->getBreadcrumbs($slug, 'base/docs');
+
+        $this->assertSame($expected, $breadcrumbs);
+    }
+
+    public function testGetBreadcrumbsEncodesSlugs(): void
+    {
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('special_chars')], true);
+
+        $breadcrumbs = $manifest->getBreadcrumbs('section/c# & 100%/page', 'base/docs');
+
+        $this->assertSame([
+            ['title' => 'Section', 'href' => 'base/docs/section'],
+            ['title' => 'C# & 100%', 'href' => 'base/docs/section/c%23%20%26%20100%25'],
+        ], $breadcrumbs);
+    }
+
     public static function provideEncodeSlug(): array
     {
         return [
@@ -564,6 +621,12 @@ class UserDocsManifestTest extends SapphireTest
     public function testEncodeSlug(string $slug, string $expected): void
     {
         $this->assertSame($expected, UserDocsManifest::encodeSlug($slug));
+    }
+
+    public function testGetBreadcrumbsUnknownSlug(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->getDocsManifest()->getBreadcrumbs('not_a_page', 'base/docs');
     }
 
     public function testGetLocalisedDocDataWithTranslationWithoutRootIndex(): void
@@ -665,6 +728,25 @@ class UserDocsManifestTest extends SapphireTest
 
         $this->assertSame('test/module-a', $docData['section']['module']);
         $this->assertTrue($docData['section']['isIndex']);
+        $this->assertSame('test/module-c', $docData['section/page']['module']);
+    }
+
+    public function testGetDocDataWithModuleOverride(): void
+    {
+        // module_a has priority, but only module_b has French docs
+        $manifest = $this->regenerateForModules(['module_a', 'module_b']);
+
+        $this->assertSame('test/module-a', $manifest->getDocData('en')['section/page']['module']);
+        $this->assertSame('test/module-b', $manifest->getDocData('fr')['section/page']['module']);
+        $this->assertSame(['en', 'fr'], array_keys($manifest->getDocData()));
+    }
+
+    public function testGetDocDataWithModuleOverrideRootWithoutIndex(): void
+    {
+        // module_c has priority but has no index.md for its root folder
+        $docData = $this->regenerateForModules(['module_c', 'module_a'])->getDocData('en');
+
+        $this->assertSame('test/module-a', $docData['section']['module']);
         $this->assertSame('test/module-c', $docData['section/page']['module']);
     }
 

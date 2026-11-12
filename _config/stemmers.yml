@@ -1,0 +1,25 @@
+SilverStripe\UserDocs\Search\SearchIndex:
+  stemmers:
+    ar: TeamTNT\TNTSearch\Stemmer\ArabicStemmer
+    de: TeamTNT\TNTSearch\Stemmer\GermanStemmer
+    en: TeamTNT\TNTSearch\Stemmer\PorterStemmer
+    fr: TeamTNT\TNTSearch\Stemmer\FrenchStemmer
+    hr: TeamTNT\TNTSearch\Stemmer\CroatianStemmer
+    it: TeamTNT\TNTSearch\Stemmer\ItalianStemmer
+    lv: TeamTNT\TNTSearch\Stemmer\LatvianStemmer
+    pl: TeamTNT\TNTSearch\Stemmer\PolishStemmer
+    pt: TeamTNT\TNTSearch\Stemmer\PortugueseStemmer
+    ru: TeamTNT\TNTSearch\Stemmer\RussianStemmer
+    uk: TeamTNT\TNTSearch\Stemmer\UkrainianStemmer
+  stemmer_aliases:
+    en:
+      ad: 'add'
+      children: 'child'
+      creation: 'creat'
+      editor: 'edit'
+      emb: 'embed'
+      expiri: 'expir'
+      hidden: 'hide'
+      notif: 'notifi'
+      referenc: 'refer'
+      submiss: 'submit'

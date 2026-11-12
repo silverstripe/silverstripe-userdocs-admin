@@ -6,6 +6,10 @@ SilverStripe\Core\Injector\Injector:
     factory: 'SilverStripe\Core\Cache\CacheFactory'
     constructor:
       namespace: 'userdocsmanifest'
+  Psr\SimpleCache\CacheInterface.userdocssearch:
+    factory: 'SilverStripe\Core\Cache\CacheFactory'
+    constructor:
+      namespace: 'userdocssearch'
   # Commonmark markdown converter injection config
   League\CommonMark\Environment\Environment.userdocs:
     type: prototype
@@ -42,3 +46,9 @@ SilverStripe\Core\Injector\Injector:
     class: 'League\CommonMark\MarkdownConverter'
     constructor:
       environment: '%$League\CommonMark\Environment\Environment.userdocs'
+  TeamTNT\TNTSearch\TNTSearch.userdocs:
+    factory: 'SilverStripe\UserDocs\Search\TntSearchFactory'
+    constructor:
+      config:
+        driver: 'filesystem'
+        storage: 'userdocs-admin/indexes/'

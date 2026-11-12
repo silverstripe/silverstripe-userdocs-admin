@@ -6,6 +6,7 @@ use Collator;
 use InvalidArgumentException;
 use Normalizer;
 use Psr\SimpleCache\CacheInterface;
+use SilverStripe\Control\Controller;
 use SilverStripe\Core\Manifest\ManifestFileFinder;
 use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
 use Locale;
@@ -68,6 +69,12 @@ class UserDocsManifest implements Flushable
      * Doc data for the current request, keyed by the list of locales it was resolved for.
      */
     private array $localisedDocData = [];
+
+    /**
+     * Doc data for each locale with no locale fallbacks, keyed by locale then slug.
+     * See getDocData().
+     */
+    private ?array $docDataByLocale = null;
 
     /**
      * Collators used to sort docs, keyed by locale and whether they compare numbers by value.
@@ -426,6 +433,40 @@ class UserDocsManifest implements Flushable
     }
 
     /**
+     * Get the metadata about documentation, optionally for a single locale.
+     * For each locale, the doc from the module with the highest priority that has the doc in that locale is used.
+     * Note that this does not include the locale fallbacks - use getLocalisedDocData()
+     * if you need the data to be flowing through the locale cascade.
+     *
+     * @return array Doc data keyed by slug if a locale is given, otherwise keyed by locale then slug
+     */
+    public function getDocData(?string $locale = null): array
+    {
+        if ($this->docDataByLocale === null) {
+            $this->docDataByLocale = [];
+            foreach ($this->docData as $moduleData) {
+                foreach ($moduleData as $moduleLocale => $localeData) {
+                    foreach ($localeData as $slug => $docDatum) {
+                        // A doc from a higher priority module wins,
+                        // unless it's only a placeholder for a root folder without an index.md file
+                        $existing = $this->docDataByLocale[$moduleLocale][$slug] ?? null;
+                        if (
+                            !$existing
+                            || ($this->isRootWithoutIndex($existing) && !$this->isRootWithoutIndex($docDatum))
+                        ) {
+                            $this->docDataByLocale[$moduleLocale][$slug] = $docDatum;
+                        }
+                    }
+                }
+            }
+        }
+        if ($locale !== null) {
+            return $this->docDataByLocale[$locale] ?? [];
+        }
+        return $this->docDataByLocale;
+    }
+
+    /**
      * Get all data about documentation for the current locale.
      *
      * For each doc, the module with the highest priority that has the doc in any of the current locales is used.
@@ -456,6 +497,36 @@ class UserDocsManifest implements Flushable
         }
         $this->localisedDocData[$key] = $this->sortDocData($result, $locales[0]);
         return $this->localisedDocData[$key];
+    }
+
+    /**
+     * Get the title and link of each ancestor of the doc with the given slug, starting at the root.
+     * The link is null for ancestors without content.
+     *
+     * @param string $baseUrl The URL that doc slugs are relative to
+     * @throws InvalidArgumentException if the slug is not in the localised data
+     */
+    public function getBreadcrumbs(string $slug, string $baseUrl): array
+    {
+        $docData = $this->getLocalisedDocData();
+        if (!array_key_exists($slug, $docData)) {
+            throw new InvalidArgumentException('Slug must be in the localised data');
+        }
+        $breadcrumbs = [];
+        $parentSlug = $docData[$slug]['parentSlug'];
+        while (isset($docData[$parentSlug])) {
+            $parent = $docData[$parentSlug];
+            $href = null;
+            if ($parent['hasContent']) {
+                $href = Controller::join_links($baseUrl, static::encodeSlug($parent['slug']));
+            }
+            array_unshift($breadcrumbs, [
+                'title' => $parent['title'],
+                'href' => $href,
+            ]);
+            $parentSlug = $parent['parentSlug'];
+        }
+        return $breadcrumbs;
     }
 
     /**
@@ -534,6 +605,7 @@ class UserDocsManifest implements Flushable
     protected function setManifestData(array $data): bool
     {
         $this->localisedDocData = [];
+        $this->docDataByLocale = null;
         $success = true;
         foreach ($this->cachedProperties as $property) {
             if (!isset($data[$property]) || !is_array($data[$property])) {
