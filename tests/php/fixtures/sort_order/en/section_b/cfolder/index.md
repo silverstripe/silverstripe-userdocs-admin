@@ -1,0 +1,3 @@
+# cfolder/index
+
+Content.

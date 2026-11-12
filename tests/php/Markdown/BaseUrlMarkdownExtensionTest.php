@@ -15,6 +15,7 @@ use SilverStripe\Core\Manifest\ModuleResourceLoader;
 use SilverStripe\Dev\SapphireTest;
 use SilverStripe\i18n\i18n;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
+use SilverStripe\UserDocs\Markdown\ExtensionDocMarker;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Filesystem\Path;
 
@@ -51,6 +52,21 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
             'slug' => 'getting_started/first_page',
             'rootPathInModule' => 'tests/php/fixtures/docs',
             'pathFromLocale' => '01_getting_started/01_first_page.md',
+        ];
+    }
+
+    /**
+     * Doc data for an extension doc in a different folder from the doc in docData(), with its own images
+     */
+    private static function extensionDocData(): array
+    {
+        return [
+            'isIndex' => false,
+            'module' => 'silverstripe/userdocs-admin',
+            'locale' => 'en',
+            'slug' => 'getting_started/first_page',
+            'rootPathInModule' => 'tests/php/fixtures/localisation',
+            'pathFromLocale' => '01_section/01_first.md',
         ];
     }
 
@@ -188,6 +204,19 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         $html = $this->convert("[link]($url)", static::docData(), $environment);
 
         $this->assertSame('<p><a href="' . $expected . '">link</a></p>', trim($html));
+    }
+
+    public function testOnDocumentParsedLinksEncodesSlug(): void
+    {
+        $docData = ['slug' => 'c# & 100%/page'] + static::docData();
+
+        $html = $this->convert('[link](other) [anchor](#details)', $docData);
+
+        $this->assertSame(
+            '<p><a href="/admin/user-docs/docs/c%23%20%26%20100%25/other">link</a> '
+            . '<a href="/admin/user-docs/docs/c%23%20%26%20100%25/page#details">anchor</a></p>',
+            trim($html)
+        );
     }
 
     public static function provideOnDocumentParsedImages(): array
@@ -337,6 +366,135 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         $this->assertSame('<p><img src="' . $placeholderUrl . '" alt="Missing" /></p>', trim($html));
     }
 
+    public function testOnDocumentParsedWithExtension(): void
+    {
+        // The extension's file is in a different folder, which has its own copy of the image
+        $extensionDocData = static::extensionDocData();
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
+        Injector::inst()->registerService($logger, LoggerInterface::class);
+        $this->exposeResource('tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png');
+        $this->exposeResource('tests/php/fixtures/localisation/en/01_section/images/screenshot.png');
+        $markdown = "![Original](images/screenshot.png)\n\n"
+            . ExtensionDocMarker::getMarker(0) . "\n\n"
+            . '![Extension](images/screenshot.png)';
+
+        $html = $this->convert($markdown, static::docData(), extensionData: [0 => $extensionDocData]);
+
+        $originalUrl = ModuleResourceLoader::resourceURL(
+            'silverstripe/userdocs-admin:tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png'
+        );
+        $extensionUrl = ModuleResourceLoader::resourceURL(
+            'silverstripe/userdocs-admin:tests/php/fixtures/localisation/en/01_section/images/screenshot.png'
+        );
+        // The marker is left in place for other listeners to use
+        $this->assertSame(
+            '<p><img src="' . $originalUrl . '" alt="Original" /></p>' . "\n"
+            . ExtensionDocMarker::getMarker(0) . "\n"
+            . '<p><img src="' . $extensionUrl . '" alt="Extension" /></p>',
+            trim($html)
+        );
+    }
+
+    public function testOnDocumentParsedWithMultipleExtensions(): void
+    {
+        $extensionData = [
+            0 => static::extensionDocData(),
+            1 => [
+                'isIndex' => false,
+                'module' => 'silverstripe/userdocs-admin',
+                'locale' => 'en',
+                'slug' => 'getting_started/first_page',
+                'rootPathInModule' => 'tests/php/fixtures/locale_name_in_root/fr/userhelp',
+                'pathFromLocale' => '01_section/01_page.md',
+            ],
+        ];
+        $this->exposeResource('tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png');
+        $this->exposeResource('tests/php/fixtures/localisation/en/01_section/images/screenshot.png');
+        $this->exposeResource('tests/php/fixtures/locale_name_in_root/fr/userhelp/en/01_section/images/screenshot.png');
+        $markdown = "![Original](images/screenshot.png)\n\n"
+            . ExtensionDocMarker::getMarker(0) . "\n\n"
+            . "![First extension](images/screenshot.png)\n\n"
+            . ExtensionDocMarker::getMarker(1) . "\n\n"
+            . '![Second extension](images/screenshot.png)';
+
+        $html = $this->convert($markdown, static::docData(), extensionData: $extensionData);
+
+        preg_match_all('#<img src="([^"]+)"#', $html, $matches);
+        $this->assertSame([
+            ModuleResourceLoader::resourceURL(
+                'silverstripe/userdocs-admin:tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png'
+            ),
+            ModuleResourceLoader::resourceURL(
+                'silverstripe/userdocs-admin:tests/php/fixtures/localisation/en/01_section/images/screenshot.png'
+            ),
+            ModuleResourceLoader::resourceURL(
+                'silverstripe/userdocs-admin:'
+                . 'tests/php/fixtures/locale_name_in_root/fr/userhelp/en/01_section/images/screenshot.png'
+            ),
+        ], $matches[1]);
+    }
+
+    public function testOnDocumentParsedLinksInExtension(): void
+    {
+        // The extension is an index file for the same slug, so its relative links don't need ".."
+        $extensionDocData = [
+            ...static::docData(),
+            'isIndex' => true,
+            'pathFromLocale' => '01_getting_started/first_page/index.md',
+        ];
+        $markdown = "[original](other_page)\n\n"
+            . ExtensionDocMarker::getMarker(0) . "\n\n"
+            . '[extension](other_page)';
+
+        $html = $this->convert($markdown, static::docData(), extensionData: [0 => $extensionDocData]);
+
+        $this->assertSame(
+            '<p><a href="/admin/user-docs/docs/getting_started/other_page">original</a></p>' . "\n"
+            . ExtensionDocMarker::getMarker(0) . "\n"
+            . '<p><a href="/admin/user-docs/docs/getting_started/first_page/other_page">extension</a></p>',
+            trim($html)
+        );
+    }
+
+    public function testOnDocumentParsedMissingImageInExtension(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with(
+                "Could not find image 'silverstripe/userdocs-admin:"
+                . "tests/php/fixtures/localisation/en/01_section/images/missing.png'"
+            );
+        Injector::inst()->registerService($logger, LoggerInterface::class);
+        $extensionDocData = static::extensionDocData();
+        $markdown = "Original content\n\n"
+            . ExtensionDocMarker::getMarker(0) . "\n\n"
+            . '![Missing](images/missing.png)';
+
+        $this->convert($markdown, static::docData(), extensionData: [0 => $extensionDocData]);
+    }
+
+    public function testOnDocumentParsedWithUnknownExtensionMarker(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with(
+                "No extension doc data for marker '5', so the content after it"
+                . ' uses the paths of the content before it.'
+            );
+        Injector::inst()->registerService($logger, LoggerInterface::class);
+        $markdown = "Original content\n\n" . ExtensionDocMarker::getMarker(5) . "\n\nExtension content";
+
+        $html = $this->convert($markdown, static::docData(), extensionData: []);
+
+        $this->assertSame(
+            "<p>Original content</p>\n" . ExtensionDocMarker::getMarker(5) . "\n<p>Extension content</p>",
+            trim($html)
+        );
+    }
+
     public function testRegister(): void
     {
         $environment = new Environment([
@@ -376,13 +534,17 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         );
     }
 
-    private function convert(string $markdown, array $docData, ?Environment $environment = null): string
-    {
+    private function convert(
+        string $markdown,
+        array $docData,
+        ?Environment $environment = null,
+        array $extensionData = []
+    ): string {
         if (!$environment) {
             $environment = new Environment();
             $environment->addExtension(new CommonMarkCoreExtension());
         }
-        $environment->addExtension(new BaseUrlMarkdownExtension(static::BASE_URL, $docData));
+        $environment->addExtension(new BaseUrlMarkdownExtension(static::BASE_URL, $docData, $extensionData));
         return (new MarkdownConverter($environment))->convert($markdown)->getContent();
     }
 }

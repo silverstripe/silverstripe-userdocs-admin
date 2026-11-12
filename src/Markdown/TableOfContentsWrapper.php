@@ -7,7 +7,6 @@ use League\CommonMark\Node\Node;
 use League\CommonMark\Renderer\ChildNodeRendererInterface;
 use League\CommonMark\Renderer\NodeRendererInterface;
 use League\CommonMark\Util\HtmlElement;
-use League\CommonMark\Xml\XmlNodeRendererInterface;
 use SilverStripe\Core\Injector\Injectable;
 
 /**
@@ -17,6 +16,7 @@ use SilverStripe\Core\Injector\Injectable;
 class TableOfContentsWrapper implements NodeRendererInterface
 {
     use Injectable;
+    use RewritesAnchorLinks;
 
     private TableOfContentsRenderer $innerRenderer;
 
@@ -39,8 +39,7 @@ class TableOfContentsWrapper implements NodeRendererInterface
     {
         $tocListHtml = (string) $this->innerRenderer->render($node, $childRenderer);
 
-        // Rewrite anchor links to include base URL
-        $tocListHtml = preg_replace('/href="#([^"]*)"/i', 'href="' . $this->baseUrl . '#$1"', $tocListHtml);
+        $tocListHtml = $this->addBaseUrlToAnchors($tocListHtml, $this->baseUrl);
 
         // Wrap ToC with nav element and heading
         $heading = new HtmlElement(

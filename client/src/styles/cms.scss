@@ -119,3 +119,99 @@
     opacity: 1;
   }
 }
+
+.userdocs-search-results {
+  padding: 30px 20px;
+
+  .search-results__list {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .search-results__result {
+    padding-top: 20px;
+    padding-bottom: 20px;
+    border-top: 1px solid #D4DBE5;
+
+    &:last-of-type {
+      border-bottom: 1px solid #D4DBE5;
+    }
+  }
+
+  .search-results__result-heading {
+    font-size: 1.154rem;
+  }
+
+  .search-results__result-summary {
+
+    em {
+      display: inline-block;
+      height: 1.385rem;
+      background-color: #CCE1FF;
+      font-style: normal;
+      font-weight: 700;
+    }
+  }
+
+  .search-results__result-breadcrumb {
+    font-size: 0.85rem;
+    padding-top: 15px;
+  }
+
+  .search-results__result-crumbs-list {
+    display: inline-flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .search-results__result-crumbs-list-item:not(:last-of-type) {
+    display: inline;
+
+    &:after {
+      content: ">";
+      display: inline-block;
+      margin: 0 0.5em;
+    }
+  }
+
+  .pagination__nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 15px;
+  }
+
+  .pagination__first,
+  .pagination__prev,
+  .pagination__next,
+  .pagination__last {
+    margin: 0;
+  }
+
+  .pagination__page-number {
+    margin: 0 5px;
+  }
+
+  // Needs input to be more selective than the existing CMS styling
+  input.pagination__input {
+    display: inline;
+    width: 35px;
+    padding-left: 0;
+    padding-right: 0;
+    border-color: $border-color;
+    text-align: center;
+    appearance: textfield;
+
+    &::-webkit-inner-spin-button,
+    &::-webkit-outer-spin-button {
+      appearance: none;
+      margin: 0;
+    }
+
+      &:focus {
+        border-color: $input-focus-border-color;
+        box-shadow: $input-focus-box-shadow;
+      }
+  }
+}

@@ -1,0 +1,7 @@
+---
+title: Section
+---
+
+# Section
+
+Content.

@@ -28,14 +28,11 @@ class LinkFixerEventHandler
                     continue;
                 }
 
-                if (preg_match('@\.md(#[^/]*)?$@', $url, $matches)) {
-                    // Convert file reference to slug
-                    $url = UserDocsManifest::singleton()->getSlugForPath($url);
+                if (preg_match('@^(?<path>.*\.md)(?<anchor>#[^/]*)?$@', $url, $matches)) {
+                    // Convert file reference to slug. The URL is encoded, but the slug is made from the file name.
+                    $slug = UserDocsManifest::singleton()->getSlugForPath(rawurldecode($matches['path']));
                     // Add back anchor if present
-                    if ($matches[1] ?? null) {
-                        $url .= $matches[1];
-                    }
-                    $node->setUrl($url);
+                    $node->setUrl(UserDocsManifest::encodeSlug($slug) . ($matches['anchor'] ?? ''));
                 }
             }
         }

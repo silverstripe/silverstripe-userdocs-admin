@@ -31,6 +31,26 @@ class LinkFixerEventHandlerTest extends SapphireTest
                 'url' => '../02_other_section/01_page.md',
                 'expected' => '../other_section/page',
             ],
+            'index file in the same folder' => [
+                'url' => 'index.md',
+                'expected' => '.',
+            ],
+            'index file in the same folder with a dot segment' => [
+                'url' => './index.md#details',
+                'expected' => '.#details',
+            ],
+            'index file in a parent folder' => [
+                'url' => '../index.md',
+                'expected' => '..',
+            ],
+            'markdown file with non-ASCII capitals' => [
+                'url' => '04_ÉTÉ_INDIEN.md',
+                'expected' => '%C3%A9t%C3%A9_indien',
+            ],
+            'markdown file with characters that are encoded in URLs' => [
+                'url' => '<02_c# & 100%.md>',
+                'expected' => 'c%23%20%26%20100%25',
+            ],
             'markdown file with an anchor' => [
                 'url' => '02_second_page.md#details',
                 'expected' => 'second_page#details',
