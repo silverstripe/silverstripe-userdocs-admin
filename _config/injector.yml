@@ -30,6 +30,11 @@ SilverStripe\Core\Injector\Injector:
           min_heading_level: 2
           placeholder: '[TABLE_OF_CONTENTS]'
           position: 'placeholder'
+        table:
+          wrap:
+            enabled: true
+            attributes:
+              class: 'table-wrapper'
       extensions:
         CommonMarkCoreExtension: '%$League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension'
         FrontMatterExtension: '%$League\CommonMark\Extension\FrontMatter\FrontMatterExtension'

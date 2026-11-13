@@ -19,7 +19,9 @@
             </div>
         </div>
         <div class="panel panel--padded panel--scrollable flexbox-area-grow fill-height userdocs-content"<% if $CurrentDocLang %> lang="$CurrentDocLang.ATT"<% end_if %>>
-            $RenderedDocs
+            <div class="user-docs-container">
+                $RenderedDocs
+            </div>
         </div>
     </div>
     <%-- Flyout tree menu for short-width windows --%>

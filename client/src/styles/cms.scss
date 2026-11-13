@@ -6,6 +6,9 @@
 @import "variables";
 @import "bootstrap/scss/maps";
 @import "bootstrap/scss/mixins/breakpoints";
+@import "docs/table";
+@import "docs/tableOfContents";
+@import "docs/headingPermalinks";
 
 // Hide links tree when the window is too narrow
 // This mimics the CMS tree
@@ -49,7 +52,7 @@
 
   .flyout-menu__tree {
     background: $white;
-    width: $cms-panel-sm;
+    width: 375px;
     margin-left: auto;
     margin-right: 0;
 
@@ -102,20 +105,33 @@
 
 // Styling for the actual rendered documentation
 .userdocs-content {
-  // Hide heading permalink until the heading is hovered over or the permalink has focus.
-  // Use opacity, because keyboard users can't tab to an element with visibility: hidden.
-  .heading-permalink {
-    opacity: 0;
+  * {
+    box-sizing: border-box;
   }
 
-  h1:hover .heading-permalink,
-  h3:hover .heading-permalink,
-  h2:hover .heading-permalink,
-  h4:hover .heading-permalink,
-  h5:hover .heading-permalink,
-  h6:hover .heading-permalink,
-  .heading-permalink:focus
-  {
-    opacity: 1;
+  a:hover {
+    text-decoration: none;
+  }
+
+  // Ensure code blocks don't cause horizontal scrolling of the whole page
+  code[class*="language-"] {
+    overflow-x: scroll;
+    display: block;
+  }
+
+  // Ensure images don't cause horizontal scrolling of the whole page
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  h1:first-child {
+    margin-top: 0;
+  }
+
+  .user-docs-container {
+    width: 100%;
+    max-width: 650px;
+    margin: 1.5rem auto;
   }
 }

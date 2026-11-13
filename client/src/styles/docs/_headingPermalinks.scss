@@ -1,0 +1,29 @@
+/* Hide heading permalink until the heading is hovered over or the permalink has focus (and some styling) */
+// Use opacity, because keyboard users can't tab to an element with visibility: hidden.
+.userdocs-content {
+  .heading-permalink {
+    transition: opacity .15s ease-in;
+    opacity: 0;
+    color: #969ba4;
+    margin-left: 0.8rem;
+    font-size: 0.85em;
+    vertical-align: middle;
+    text-decoration: none;
+
+    &:hover,
+    &:focus {
+      color: #005ae1;
+      opacity: 1 !important;
+    }
+  }
+
+  h1:hover .heading-permalink,
+  h2:hover .heading-permalink,
+  h3:hover .heading-permalink,
+  h4:hover .heading-permalink,
+  h5:hover .heading-permalink,
+  h6:hover .heading-permalink
+  {
+    opacity: 0.6;
+  }
+}

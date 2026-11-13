@@ -33,6 +33,9 @@
         "silverstripe/documentation-lint": "^2",
         "phpstan/extension-installer": "^1.3"
     },
+    "conflict": {
+        "league/config": "<1.2.0"
+    },
     "autoload": {
         "psr-4": {
             "SilverStripe\\UserDocs\\": "src/",
