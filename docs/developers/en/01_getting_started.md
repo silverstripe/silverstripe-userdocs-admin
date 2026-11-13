@@ -11,7 +11,7 @@ User documentation can be registered by adding it to the [`UserDocsManifest.docu
 
 The path can either be in module:path format (i.e. the composer name of the module and the relative path within that module, separated by a colon), or can be a path relative to the root of your project.
 
-Note that documentation must be within a Silverstripe CMS module (including your project itself, i.e. in the `app/` directory).
+Note that documentation must be within a Silverstripe CMS module (including your project itself, i.e. in the `app/` directory), and each module can only register one documentation root.
 
 ```yml
 SilverStripe\UserDocs\Admin\UserDocsManifest:
