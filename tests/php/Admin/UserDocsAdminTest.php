@@ -5,6 +5,7 @@ namespace SilverStripe\UserDocs\Tests\Admin;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\SimpleCache\CacheInterface;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\Core\Manifest\ModuleLoader;
 use SilverStripe\Dev\FunctionalTest;
 use SilverStripe\Security\Security;
 use SilverStripe\UserDocs\Admin\UserDocsAdmin;
@@ -15,6 +16,8 @@ use Symfony\Component\Cache\Psr16Cache;
 
 class UserDocsAdminTest extends FunctionalTest
 {
+    private const MODULE = 'silverstripe/userdocs-admin';
+
     protected $usesDatabase = true;
 
     protected function setUp(): void
@@ -131,6 +134,94 @@ class UserDocsAdminTest extends FunctionalTest
         UserDocsManifest::singleton()->init();
 
         $this->assertNull((new UserDocsAdmin())->renderDoc($slug));
+    }
+
+    public function testRenderDocWithImage(): void
+    {
+        UserDocsManifest::singleton()->init();
+
+        $html = (new UserDocsAdmin())->renderDoc('getting_started/first_page');
+
+        // Images point at the image action
+        $this->assertStringContainsString(
+            '<img src="admin/user-docs/image?module=silverstripe%2Fuserdocs-admin&amp;path=tests%2Fphp%2Ffixtures%2F'
+            . 'docs%2Fen%2F01_getting_started%2Fimages%2Fscreenshot.png&amp;v=',
+            $html
+        );
+    }
+
+    public function testImage(): void
+    {
+        $path = 'tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png';
+
+        $response = $this->get('admin/user-docs/image?' . http_build_query([
+            'module' => static::MODULE,
+            'path' => $path,
+        ]));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('image/png', $response->getHeader('Content-Type'));
+        $this->assertSame('nosniff', $response->getHeader('X-Content-Type-Options'));
+        $this->assertStringContainsString('sandbox', $response->getHeader('Content-Security-Policy'));
+        $this->assertStringContainsString('private', $response->getHeader('Cache-Control'));
+        $this->assertStringContainsString('max-age=31536000', $response->getHeader('Cache-Control'));
+        $filePath = ModuleLoader::getModule(static::MODULE)->getResource($path)->getPath();
+        $this->assertSame('"' . hash_file('xxh3', $filePath) . '"', $response->getHeader('ETag'));
+        $this->assertSame(file_get_contents($filePath), $response->getBody());
+    }
+
+    public static function provideImageNotFound(): array
+    {
+        return [
+            'no query parameters' => [
+                'query' => [],
+            ],
+            'query parameters are arrays' => [
+                'query' => [
+                    'module' => [UserDocsAdminTest::MODULE],
+                    'path' => ['tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png'],
+                ],
+            ],
+            'module without docs' => [
+                'query' => [
+                    'module' => 'silverstripe/framework',
+                    'path' => 'tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png',
+                ],
+            ],
+            'file outside documentation root' => [
+                'query' => [
+                    'module' => UserDocsAdminTest::MODULE,
+                    'path' => 'client/images/missing-image-placeholder.png',
+                ],
+            ],
+            'file is not an image' => [
+                'query' => [
+                    'module' => UserDocsAdminTest::MODULE,
+                    'path' => 'tests/php/fixtures/docs/en/01_getting_started/01_first_page.md',
+                ],
+            ],
+        ];
+    }
+
+    #[DataProvider('provideImageNotFound')]
+    public function testImageNotFound(array $query): void
+    {
+        $response = $this->get('admin/user-docs/image?' . http_build_query($query));
+
+        $this->assertSame(404, $response->getStatusCode());
+    }
+
+    public function testImageWithoutCmsAccess(): void
+    {
+        $this->logInWithPermission('SOME_OTHER_PERMISSION');
+
+        $response = $this->get('admin/user-docs/image?' . http_build_query([
+            'module' => static::MODULE,
+            'path' => 'tests/php/fixtures/docs/en/01_getting_started/images/screenshot.png',
+        ]));
+
+        $this->assertSame(403, $response->getStatusCode());
+        $this->assertNotSame('image/png', $response->getHeader('Content-Type'));
     }
 
     public function testDocsWithEncodedSlug(): void

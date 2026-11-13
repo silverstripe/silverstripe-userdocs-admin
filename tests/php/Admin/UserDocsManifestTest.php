@@ -3,6 +3,7 @@
 namespace SilverStripe\UserDocs\Tests\Admin;
 
 use InvalidArgumentException;
+use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
@@ -681,22 +682,64 @@ class UserDocsManifestTest extends SapphireTest
 
     public function testInitWithDocumentationRoots(): void
     {
+        $moduleManifest = new ModuleManifest(BASE_PATH);
+        foreach (['module_a', 'module_b', 'module_c'] as $module) {
+            $moduleManifest->addModule($this->fixturePath("module_override/$module"));
+        }
         UserDocsManifest::config()->set('documentation_roots', [
             // module:path format
-            'silverstripe/userdocs-admin:tests/php/fixtures/docs' => true,
-            // explicitly excluded
-            'silverstripe/userdocs-admin:tests/php/fixtures/no_content' => false,
+            'test/module-a:docs' => true,
+            // excluded roots do not count toward the limit of one root for each module
+            'test/module-a:other_docs' => false,
             // list item with a path relative to the project root
-            FilesystemPath::makeRelative($this->fixturePath('docs_sibling'), BASE_PATH),
+            FilesystemPath::makeRelative($this->fixturePath('module_override/module_b/docs'), BASE_PATH),
+            // explicitly excluded
+            'test/module-c:docs' => false,
         ]);
 
+        ModuleLoader::inst()->pushManifest($moduleManifest);
         $manifest = new UserDocsManifest();
-        $manifest->init(true);
+        try {
+            $manifest->init(true);
+        } finally {
+            ModuleLoader::inst()->popManifest();
+        }
 
-        $docData = $this->getRawDocData($manifest)[static::MODULE]['en'];
-        $this->assertArrayHasKey('getting_started', $docData);
-        $this->assertArrayHasKey('sibling_section', $docData);
-        $this->assertArrayNotHasKey('section', $docData);
+        $this->assertSame(['test/module-a', 'test/module-b'], array_keys($this->getRawDocData($manifest)));
+    }
+
+    public function testInitWithMultipleRootsInModule(): void
+    {
+        UserDocsManifest::config()->set('documentation_roots', [
+            'silverstripe/userdocs-admin:tests/php/fixtures/docs' => true,
+            'silverstripe/userdocs-admin:tests/php/fixtures/docs_sibling' => true,
+        ]);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage(
+            "Each module must only have one documentation root. Multiple roots found for 'silverstripe/userdocs-admin'"
+        );
+
+        (new UserDocsManifest())->init(true);
+    }
+
+    public function testInitWithRootOutsideModule(): void
+    {
+        // The manifest has no root module, so the docs fixture is not inside any module
+        $moduleManifest = new ModuleManifest(BASE_PATH);
+        $moduleManifest->addModule($this->fixturePath('module_override/module_a'));
+        $docsPath = FilesystemPath::makeRelative($this->fixturePath('docs'), BASE_PATH);
+        UserDocsManifest::config()->set('documentation_roots', [$docsPath]);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage("Documentation root '$docsPath' must reside inside a module");
+
+        ModuleLoader::inst()->pushManifest($moduleManifest);
+        try {
+            (new UserDocsManifest())->init(true);
+        } finally {
+            ModuleLoader::inst()->popManifest();
+        }
     }
 
     public function testInitReusesCache(): void
@@ -758,6 +801,16 @@ class UserDocsManifestTest extends SapphireTest
     private function getRawDocData(UserDocsManifest $manifest): array
     {
         return (new ReflectionProperty(UserDocsManifest::class, 'docData'))->getValue($manifest);
+    }
+
+    public function testGetRootPathInModule(): void
+    {
+        $this->assertSame('tests/php/fixtures/docs', $this->getDocsManifest()->getRootPathInModule(static::MODULE));
+    }
+
+    public function testGetRootPathInModuleWithoutDocs(): void
+    {
+        $this->assertNull($this->getDocsManifest()->getRootPathInModule('silverstripe/framework'));
     }
 
     private function getDocsManifest(): UserDocsManifest

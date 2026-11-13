@@ -10,6 +10,8 @@ use SilverStripe\Control\Controller;
 use SilverStripe\Control\HTTPRequest;
 use SilverStripe\Control\HTTPResponse;
 use SilverStripe\Control\HTTPResponse_Exception;
+use SilverStripe\Control\HTTPStreamResponse;
+use SilverStripe\Control\Middleware\HTTPCacheControlMiddleware;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\i18n\i18n;
 use SilverStripe\ORM\FieldType\DBField;
@@ -36,6 +38,7 @@ class UserDocsAdmin extends LeftAndMain
     private static array $allowed_actions = [
         'treeview',
         'docs',
+        'image',
     ];
 
     private static array $url_handlers = [
@@ -83,6 +86,40 @@ class UserDocsAdmin extends LeftAndMain
     }
 
     /**
+     * Action which sends an image from a documentation root.
+     * The "module" and "path" query parameters identify the image. The "v" query parameter changes when the image
+     * changes, so that browsers don't use an old copy.
+     *
+     * @throws HTTPResponse_Exception If the image doesn't exist or can't be shown
+     */
+    public function image(HTTPRequest $request): HTTPResponse
+    {
+        $module = $request->getVar('module');
+        $path = $request->getVar('path');
+        $locator = UserDocsImageLocator::singleton();
+        $filePath = null;
+        $mimeType = null;
+        $rootPath = is_string($module) ? UserDocsManifest::singleton()->getRootPathInModule($module) : null;
+        if ($rootPath !== null && is_string($path)) {
+            $filePath = $locator->getFilePath($module, $rootPath, $path);
+            $mimeType = $filePath ? $locator->getMimeType($filePath) : null;
+        }
+        $stream = $mimeType ? fopen($filePath, 'rb') : false;
+        if (!$stream) {
+            $this->httpError(404);
+        }
+        $response = HTTPStreamResponse::create($stream, filesize($filePath));
+        $response->addHeader('Content-Type', $mimeType);
+        $response->addHeader('ETag', '"' . $locator->getHash($filePath) . '"');
+        $response->addHeader('X-Content-Type-Options', 'nosniff');
+        // Stop scripts in SVG images from running if the image is opened directly
+        $response->addHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+        // The URL changes when the image changes, so browsers can keep the image for a long time
+        HTTPCacheControlMiddleware::singleton()->privateCache(true)->setMaxAge(31536000);
+        return $response;
+    }
+
+    /**
      * Get the current doc as HTML, converted from its markdown file.
      *
      * @throws HTTPResponse_Exception If the current doc doesn't exist or has no content
@@ -109,7 +146,11 @@ class UserDocsAdmin extends LeftAndMain
         }
         /** @var MarkdownConverter $converter */
         $converter = Injector::inst()->create(MarkdownConverter::class . '.userdocs');
-        $converter->getEnvironment()->addExtension(BaseUrlMarkdownExtension::create($this->Link('docs'), $docData));
+        $converter->getEnvironment()->addExtension(BaseUrlMarkdownExtension::create(
+            $this->Link('docs'),
+            $docData,
+            $this->Link('image')
+        ));
         return $converter->convert(file_get_contents($docData['filePath']))->getContent();
     }
 

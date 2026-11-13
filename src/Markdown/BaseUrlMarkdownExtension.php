@@ -20,11 +20,10 @@ use League\Config\ConfigurationAwareInterface;
 use League\Config\ConfigurationInterface;
 use Psr\Log\LoggerInterface;
 use SilverStripe\Control\Controller;
-use SilverStripe\Control\Director;
 use SilverStripe\Core\Injector\Injectable;
 use SilverStripe\Core\Injector\Injector;
-use SilverStripe\Core\Manifest\ModuleResource;
 use SilverStripe\Core\Manifest\ModuleResourceLoader;
+use SilverStripe\UserDocs\Admin\UserDocsImageLocator;
 use SilverStripe\UserDocs\Admin\UserDocsManifest;
 use Symfony\Component\Filesystem\Path;
 
@@ -40,6 +39,8 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
 
     private array $docData;
 
+    private string $imageUrl;
+
     private string $missingImagePath;
 
     private ?ConfigurationInterface $config = null;
@@ -47,11 +48,13 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
     /**
      * @param string $baseUrl The URL that doc slugs are relative to
      * @param array $docData Metadata for the doc from UserDocsManifest
+     * @param string $imageUrl The URL of the action which sends images from the docs
      */
-    public function __construct(string $baseUrl, array $docData)
+    public function __construct(string $baseUrl, array $docData, string $imageUrl)
     {
         $this->baseUrl = $baseUrl;
         $this->docData = $docData;
+        $this->imageUrl = $imageUrl;
         $this->missingImagePath = ModuleResourceLoader::resourceURL(
             'silverstripe/userdocs-admin:client/images/missing-image-placeholder.png'
         );
@@ -129,53 +132,49 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
     }
 
     /**
-     * Set the image URL to the public URL of the module resource it refers to.
-     * Uses the missing image placeholder and logs a warning if the image can't be shown.
+     * Point an image at the CMS action which sends images, or at the missing image placeholder.
      */
     private function updateImageUrl(Image $node, string $url): void
     {
+        $node->setUrl($this->missingImagePath);
+        // CommonMark percent-encodes URLs, but file names on disk aren't encoded
+        $url = rawurldecode($url);
         $logger = Injector::inst()->get(LoggerInterface::class);
+        $module = $this->docData['module'];
+        $rootPathInModule = $this->docData['rootPathInModule'];
         // Locales are a single folder, so the result is the same for all locales
-        $pathInModule = $this->getPathInModule($this->docData['locale'], $url);
-        if ($pathInModule === '..' || str_starts_with($pathInModule, '../')) {
-            $node->setUrl($this->missingImagePath);
-            $docPath = Path::join(
-                $this->docData['rootPathInModule'],
-                $this->docData['locale'],
-                $this->docData['pathFromLocale']
-            );
-            $logger->warning("Image '$url' in '{$this->docData['module']}:$docPath' is outside the module");
+        $pathInRoot = $this->getPathInRoot($this->docData['locale'], $url);
+        if ($pathInRoot === '..' || str_starts_with($pathInRoot, '../')) {
+            $docPath = Path::join($rootPathInModule, $this->docData['locale'], $this->docData['pathFromLocale']);
+            $logger->warning("Image '$url' in '$module:$docPath' is outside the documentation root");
             return;
         }
-        $missingResourcePath = null;
-        $unexposedResourcePath = null;
-        $resourcesPath = Path::join(Director::publicFolder(), RESOURCES_DIR);
+        $locator = UserDocsImageLocator::singleton();
+        $filePath = null;
+        $pathInModule = null;
         // Make sure localised docs can use images from fallback locales
         foreach (UserDocsManifest::getLocalePriority() as $locale) {
-            $moduleResourcePath = $this->getModuleResourcePath($locale, $url);
-            $resource = ModuleResourceLoader::singleton()->resolveResource($moduleResourcePath);
-            if ($resource instanceof ModuleResource && $resource->exists()) {
-                // The browser can only load images which are exposed in the public folder
-                $publicPath = Path::join($resourcesPath, $resource->getRelativePath());
-                if (file_exists($publicPath)) {
-                    $node->setUrl($resource->getURL());
-                    return;
-                }
-                $unexposedResourcePath ??= $moduleResourcePath;
-            }
-            if ($locale === $this->docData['locale']) {
-                $missingResourcePath = $moduleResourcePath;
+            $pathInModule = Path::join($rootPathInModule, $this->getPathInRoot($locale, $url));
+            $filePath = $locator->getFilePath($module, $rootPathInModule, $pathInModule);
+            if ($filePath) {
+                break;
             }
         }
-        $node->setUrl($this->missingImagePath);
-        if ($unexposedResourcePath) {
-            $logger->warning("Image '$unexposedResourcePath' is not exposed in the public folder");
+        if (!$filePath) {
+            $missingPathInModule = Path::join($rootPathInModule, $pathInRoot);
+            $logger->warning("Could not find image '$module:$missingPathInModule'");
             return;
         }
-        if (!$missingResourcePath) {
-            $missingResourcePath = $this->getModuleResourcePath($this->docData['locale'], $url);
+        if (!$locator->getMimeType($filePath)) {
+            $logger->warning("Image '$module:$pathInModule' is not a supported type of image");
+            return;
         }
-        $logger->warning("Could not find image '$missingResourcePath'");
+        $query = http_build_query([
+            'module' => $module,
+            'path' => $pathInModule,
+            'v' => $locator->getHash($filePath),
+        ]);
+        $node->setUrl($this->imageUrl . '?' . $query);
     }
 
     /**
@@ -229,26 +228,16 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
     }
 
     /**
-     * Get the module resource path for a URL relative to the current doc,
+     * Get the path relative to the documentation root for a URL relative to the current doc,
      * as if the doc was in the folder for the given locale.
+     * The path starts with "../" if the URL points outside the documentation root.
      */
-    private function getModuleResourcePath(string $locale, string $url): string
-    {
-        return $this->docData['module'] . ':' . $this->getPathInModule($locale, $url);
-    }
-
-    /**
-     * Get the path relative to the module root for a URL relative to the current doc,
-     * as if the doc was in the folder for the given locale.
-     * The path starts with "../" if the URL points outside the module.
-     */
-    private function getPathInModule(string $locale, string $url): string
+    private function getPathInRoot(string $locale, string $url): string
     {
         // Note that we _must_ use Symfony's Path class here to resolve path traversal,
         // because otherwise Silverstripe's Path class will throw an exception while
-        // resolving the resource path.
+        // resolving the path.
         return Path::canonicalize(Controller::join_links([
-            $this->docData['rootPathInModule'],
             $locale,
             $this->docData['pathFromLocale'],
             '..',

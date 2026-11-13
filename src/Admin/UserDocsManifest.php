@@ -9,6 +9,7 @@ use Psr\SimpleCache\CacheInterface;
 use SilverStripe\Core\Manifest\ManifestFileFinder;
 use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
 use Locale;
+use LogicException;
 use Psr\Log\LoggerInterface;
 use SilverStripe\Core\Config\Configurable;
 use SilverStripe\Core\Flushable;
@@ -426,6 +427,22 @@ class UserDocsManifest implements Flushable
     }
 
     /**
+     * Get the path to the documentation root in the given module.
+     *
+     * @return string|null The path relative to the module root, or null if the module has no docs
+     */
+    public function getRootPathInModule(string $module): ?string
+    {
+        // All docs in a module have the same root, so use the first one
+        foreach ($this->docData[$module] ?? [] as $localeData) {
+            foreach ($localeData as $docDatum) {
+                return $docDatum['rootPathInModule'];
+            }
+        }
+        return null;
+    }
+
+    /**
      * Get all data about documentation for the current locale.
      *
      * For each doc, the module with the highest priority that has the doc in any of the current locales is used.
@@ -649,6 +666,7 @@ class UserDocsManifest implements Flushable
     private function getDocRoots(): array
     {
         $roots = [];
+        $modules = [];
         foreach (static::config()->get('documentation_roots') as $dir => $include) {
             if (is_int($dir)) {
                 $dir = $include;
@@ -657,7 +675,18 @@ class UserDocsManifest implements Flushable
             if (!$include) {
                 continue;
             }
-            $roots[] = FilesystemPath::makeAbsolute(ModuleResourceLoader::singleton()->resolvePath($dir), BASE_PATH);
+            $fullPath = FilesystemPath::makeAbsolute(ModuleResourceLoader::singleton()->resolvePath($dir), BASE_PATH);
+            $moduleName = ModuleLoader::inst()->getManifest()->getModuleByPath($fullPath)?->getName();
+            if ($moduleName === null) {
+                throw new LogicException("Documentation root '$dir' must reside inside a module");
+            }
+            if (in_array($moduleName, $modules)) {
+                throw new LogicException(
+                    "Each module must only have one documentation root. Multiple roots found for '$moduleName'"
+                );
+            }
+            $modules[] = $moduleName;
+            $roots[] = $fullPath;
         }
         return $roots;
     }

@@ -20,6 +20,7 @@
     ],
     "require": {
         "php": "^8.3",
+        "ext-fileinfo": "*",
         "league/commonmark": "^2.10.4",
         "pomodocs/commonmark-alert": "^0.8",
         "silverstripe/framework": "^6.3",

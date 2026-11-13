@@ -101,7 +101,9 @@ Links that start with a protocol such as `http://` or `https://` aren't changed.
 
 ## Images in docs
 
-To include images in your documentation, expose the folder(s) (see [exposing static resources](/developer_guides/templates/requirements/#exposing-static-resources)) and use relative paths the same way you normally would.
+To include images in your documentation, use relative paths the same way you normally would. Images must be in the same documentation root as the doc which uses them, and must be AVIF, GIF, JPEG, PNG, SVG, or WebP files.
+
+You don't need to expose images in the public folder. Only users who can access the user docs section can see them.
 
 Translated documentation doesn't need its own copy of every image (see [localising images](./localising_documentation#images)).
 
