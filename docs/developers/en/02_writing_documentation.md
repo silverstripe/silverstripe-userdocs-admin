@@ -111,9 +111,17 @@ Translated documentation doesn't need its own copy of every image (see [localisi
 
 Out of the box, all [CommonMark](https://commonmark.org/) and [GitHub flavored](https://github.github.com/gfm/) markdown is supported. GitHub's [alert syntax](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) is also supported.
 
-In addition to this, a table of contents (generated from h2 and lower headings) is added automatically after the first `h1`, and you can customise heading anchors by adding `{#id}` after the heading markdown (for example `## My heading {#custom-id}` will render a `h2` heading with the text "My heading" that has the anchor `#custom-id`). Custom heading anchors apply to the heading permalink as well as the table of contents and can be used in your own relative links. If you don't provide a custom anchor, one will be generated based on the heading text.
+In addition to this, a [table of contents](#table-of-contents) is added automatically, and you can customise heading anchors by adding `{#id}` after the heading markdown (for example `## My heading {#custom-id}` will render a `h2` heading with the text "My heading" that has the anchor `#custom-id`). Custom heading anchors apply to the heading permalink as well as the table of contents and can be used in your own relative links. If you don't provide a custom anchor, one will be generated based on the heading text.
 
 To stop IDs in the documentation from clashing with IDs in the CMS, each ID is rendered with a `userdocs-` prefix. For example `## My heading {#custom-id}` renders `<h2 id="userdocs-custom-id">`. Don't include the prefix in your links. Write `[my heading](#custom-id)`, and the prefix is added to the link for you. This also applies to custom IDs on other elements, for example a paragraph followed by `{#custom-id}`. IDs in raw HTML (for example `<div id="custom-id">`) don't get the prefix, so links to them won't work.
+
+### Table of contents
+
+A table of contents is generated from the `h2` and lower headings, and is added before the first of these headings. This means it comes after the page title and the intro.
+
+Only put a short intro between the `h1` and the first `h2`. Any other content in that space comes before the table of contents, so users can miss the headings below it.
+
+If a page has no `h2` or lower headings, no table of contents is added.
 
 ### Markdown extensions and configuration
 

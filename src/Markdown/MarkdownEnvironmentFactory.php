@@ -50,8 +50,8 @@ class MarkdownEnvironmentFactory implements Factory
             }
         }
         if ($hasTableOfContents) {
-            // Add a table of contents placeholder after the first h1 in any document, so that the TOC is
-            // rendered below the page title instead of above it.
+            // Add a table of contents placeholder before the first heading it lists, so that the TOC is
+            // rendered below the page title and intro instead of above them.
             $environment->addEventListener(
                 DocumentParsedEvent::class,
                 [TableOfContentsEventHandler::create(), 'onDocumentParsed']

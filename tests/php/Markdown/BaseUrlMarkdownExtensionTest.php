@@ -337,7 +337,7 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         $docUrl = '/admin/user-docs/docs/getting_started/first_page';
         $this->assertStringContainsString(
             '<nav class="toc-container" aria-labelledby="toc-heading">'
-            . '<h2 id="toc-heading" class="toc-heading">On this page</h2>'
+            . '<h2 id="toc-heading" class="toc-heading">Quick links</h2>'
             . '<ul class="table-of-contents">' . "\n"
             . '<li><a href="' . $docUrl . '#details">Details</a></li>',
             $html

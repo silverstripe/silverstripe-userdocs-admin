@@ -45,7 +45,7 @@ class TableOfContentsWrapper implements NodeRendererInterface
         $heading = new HtmlElement(
             'h2',
             ['id' => 'toc-heading', 'class' => 'toc-heading'],
-            _t(__CLASS__ . '.on_this_page', 'On this page')
+            _t(__CLASS__ . '.heading', 'Quick links')
         );
         return new HtmlElement(
             'nav',
