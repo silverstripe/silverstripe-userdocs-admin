@@ -15,6 +15,7 @@ use SilverStripe\Core\Manifest\ModuleResourceLoader;
 use SilverStripe\Dev\SapphireTest;
 use SilverStripe\i18n\i18n;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
+use SilverStripe\View\SSViewer;
 
 class BaseUrlMarkdownExtensionTest extends SapphireTest
 {
@@ -23,6 +24,12 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
     private const IMAGE_URL = '/admin/user-docs/image';
 
     private const MODULE = 'silverstripe/userdocs-admin';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        SSViewer::config()->set('enable_base_tag', true);
+    }
 
     private static function docData(): array
     {
@@ -170,6 +177,22 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
         $html = $this->convert("[link]($url)", static::docData(), $environment);
 
         $this->assertSame('<p><a href="' . $expected . '">link</a></p>', trim($html));
+    }
+
+    public function testOnDocumentParsedLinksWithoutBaseTag(): void
+    {
+        SSViewer::config()->set('enable_base_tag', false);
+        $environment = new Environment(['heading_permalink' => ['fragment_prefix' => 'userdocs']]);
+        $environment->addExtension(new CommonMarkCoreExtension());
+        $environment->addExtension(new HeadingPermalinkExtension());
+
+        $html = $this->convert('[anchor](#details) [link](second_page#details)', static::docData(), $environment);
+
+        $this->assertSame(
+            '<p><a href="#userdocs-details">anchor</a> '
+            . '<a href="/admin/user-docs/docs/getting_started/second_page#userdocs-details">link</a></p>',
+            trim($html)
+        );
     }
 
     public function testOnDocumentParsedLinksEncodesSlug(): void
@@ -347,6 +370,23 @@ class BaseUrlMarkdownExtensionTest extends SapphireTest
             $html
         );
         $this->assertStringNotContainsString('href="#', $html);
+    }
+
+    public function testRegisterWithoutBaseTag(): void
+    {
+        SSViewer::config()->set('enable_base_tag', false);
+        $environment = new Environment([
+            'heading_permalink' => ['id_prefix' => '', 'fragment_prefix' => '', 'symbol' => '#'],
+            'table_of_contents' => ['position' => 'top'],
+        ]);
+        $environment->addExtension(new CommonMarkCoreExtension());
+        $environment->addExtension(new HeadingPermalinkExtension());
+        $environment->addExtension(new TableOfContentsExtension());
+
+        $html = $this->convert("## Details\n\nSome details.", static::docData(), $environment);
+
+        $this->assertStringContainsString('<li><a href="#details">Details</a></li>', $html);
+        $this->assertStringContainsString('<a id="details" href="#details" class="heading-permalink"', $html);
     }
 
     private function getPlaceholderUrl(): string

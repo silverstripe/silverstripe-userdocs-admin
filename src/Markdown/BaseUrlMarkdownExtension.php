@@ -23,8 +23,10 @@ use SilverStripe\Control\Controller;
 use SilverStripe\Core\Injector\Injectable;
 use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Core\Manifest\ModuleResourceLoader;
+use SilverStripe\Dev\Deprecation;
 use SilverStripe\UserDocs\Admin\UserDocsImageLocator;
 use SilverStripe\UserDocs\Admin\UserDocsManifest;
+use SilverStripe\View\SSViewer;
 use Symfony\Component\Filesystem\Path;
 
 /**
@@ -43,6 +45,8 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
 
     private string $missingImagePath;
 
+    private bool $rewriteAnchorLinks;
+
     private ?ConfigurationInterface $config = null;
 
     /**
@@ -58,6 +62,10 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
         $this->missingImagePath = ModuleResourceLoader::resourceURL(
             'silverstripe/userdocs-admin:client/images/missing-image-placeholder.png'
         );
+        // Without a <base> tag, anchor links already resolve against the current doc
+        $this->rewriteAnchorLinks = (bool) Deprecation::withSuppressedNotice(
+            fn () => SSViewer::config()->get('enable_base_tag')
+        );
     }
 
     public function register(EnvironmentBuilderInterface $environment): void
@@ -69,7 +77,10 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
 
         $hasTableOfContents = false;
         $hasPermalinkExtension = false;
-        $baseUrl = Controller::join_links($this->baseUrl, UserDocsManifest::encodeSlug($this->docData['slug']));
+        $baseUrl = '';
+        if ($this->rewriteAnchorLinks) {
+            $baseUrl = Controller::join_links($this->baseUrl, UserDocsManifest::encodeSlug($this->docData['slug']));
+        }
         foreach ($environment->getExtensions() as $extension) {
             if ($extension instanceof TableOfContentsExtension) {
                 $hasTableOfContents = true;
@@ -179,12 +190,17 @@ class BaseUrlMarkdownExtension implements ExtensionInterface, ConfigurationAware
 
     /**
      * Make the link URL relative to the base URL of the documentation.
+     * Anchor links only change if there is a <base> tag.
      */
     private function updateLinkUrl(AbstractWebResource $node, string $url): void
     {
         $url = $this->addFragmentPrefix($url);
         $urlParts = [$this->baseUrl];
         if (str_starts_with($url, '#')) {
+            if (!$this->rewriteAnchorLinks) {
+                $node->setUrl($url);
+                return;
+            }
             $urlParts[] = UserDocsManifest::encodeSlug($this->docData['slug']);
             $urlParts[] = $url;
         } elseif (str_starts_with($url, '/')) {

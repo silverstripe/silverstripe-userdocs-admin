@@ -11,9 +11,13 @@ trait RewritesAnchorLinks
 {
     /**
      * Add the base URL to the href of each anchor link in the HTML.
+     * The HTML doesn't change if the base URL is empty.
      */
     private function addBaseUrlToAnchors(string $html, string $baseUrl): string
     {
+        if ($baseUrl === '') {
+            return $html;
+        }
         // Use a callback so that "$" and "\" in the base URL aren't used as back references.
         $prefix = Convert::raw2att($baseUrl . '#');
         return preg_replace_callback(

@@ -31,6 +31,10 @@ class TableOfContentsWrapperTest extends SapphireTest
                 'baseUrl' => '/docs/"><script>',
                 'expectedHref' => '/docs/&quot;&gt;&lt;script&gt;#content-my-heading',
             ],
+            'empty base URL' => [
+                'baseUrl' => '',
+                'expectedHref' => '#content-my-heading',
+            ],
         ];
     }
 

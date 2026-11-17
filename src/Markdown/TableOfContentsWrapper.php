@@ -24,7 +24,7 @@ class TableOfContentsWrapper implements NodeRendererInterface
 
     /**
      * @param TableOfContentsRenderer $innerRenderer The renderer that renders the list before the URLs change
-     * @param string $baseUrl The URL of the current doc
+     * @param string $baseUrl The URL of the current doc, or an empty string to not change anchor links
      */
     public function __construct(TableOfContentsRenderer $innerRenderer, string $baseUrl)
     {
