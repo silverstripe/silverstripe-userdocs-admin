@@ -258,14 +258,15 @@ class UserDocsManifest implements Flushable
             }
             return $this->compareTitles($a, $b, $locale, $sortTitles);
         }
-        if ($isFolderA !== $isFolderB) {
-            return $isFolderA ? 1 : -1;
-        }
+        // Check the prefix before the type, so the order is the same for any input order
         if ($a['order'] !== null) {
             return -1;
         }
         if ($b['order'] !== null) {
             return 1;
+        }
+        if ($isFolderA !== $isFolderB) {
+            return $isFolderA ? 1 : -1;
         }
         return $this->compareTitles($a, $b, $locale, $sortTitles);
     }

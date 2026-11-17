@@ -307,7 +307,7 @@ class UserDocsManifestTest extends SapphireTest
     {
         $tree = $this->getDocsManifest()->getLocalisedTreeData();
 
-        // Prefixed files, then unprefixed files sorted by title (from the front matter if set), then the folder
+        // Prefixed docs, then unprefixed files sorted by title (from the front matter if set)
         $this->assertSame([
             'slug' => 'getting_started',
             'title' => 'Start here',
@@ -326,18 +326,6 @@ class UserDocsManifestTest extends SapphireTest
                     'isIndex' => false,
                     'hasContent' => true,
                 ],
-                'zebra' => [
-                    'slug' => 'getting_started/zebra',
-                    'title' => 'Aardvark',
-                    'isIndex' => false,
-                    'hasContent' => true,
-                ],
-                'apple' => [
-                    'slug' => 'getting_started/apple',
-                    'title' => 'Apple',
-                    'isIndex' => false,
-                    'hasContent' => true,
-                ],
                 'nested_section' => [
                     'slug' => 'getting_started/nested_section',
                     'title' => 'Nested section',
@@ -351,6 +339,18 @@ class UserDocsManifestTest extends SapphireTest
                             'hasContent' => true,
                         ],
                     ],
+                ],
+                'zebra' => [
+                    'slug' => 'getting_started/zebra',
+                    'title' => 'Aardvark',
+                    'isIndex' => false,
+                    'hasContent' => true,
+                ],
+                'apple' => [
+                    'slug' => 'getting_started/apple',
+                    'title' => 'Apple',
+                    'isIndex' => false,
+                    'hasContent' => true,
                 ],
             ],
         ], $tree['getting_started']);
@@ -419,6 +419,8 @@ class UserDocsManifestTest extends SapphireTest
             'unprefixed files and a prefixed folder' => [
                 'root' => 'section_b',
                 'expected' => [
+                    // Prefixed docs come before unprefixed docs, even when the prefixed doc is a folder
+                    'section_b/folder',
                     // Version numbers and numbers are compared by value
                     'section_b/1.9.0',
                     'section_b/1.10.0',
@@ -427,8 +429,7 @@ class UserDocsManifestTest extends SapphireTest
                     // Titles are not case sensitive
                     'section_b/afile',
                     'section_b/bfile',
-                    // Files come before folders when only one of them has a prefix
-                    'section_b/folder',
+                    // Files come before folders when neither has a prefix
                     'section_b/cfolder',
                 ],
             ],
@@ -457,6 +458,55 @@ class UserDocsManifestTest extends SapphireTest
         $children = $manifest->getLocalisedTreeData()[$root]['children'] ?? [];
 
         $this->assertSame($expected, array_column($children, 'slug'));
+    }
+
+    public static function provideGetLocalisedTreeDataSortOrderIgnoresInputOrder(): array
+    {
+        $folder = 'section_d/folder';
+        $file = 'section_d/file';
+        $unprefixed = 'section_d/unprefixed';
+        return [
+            'folder, file, unprefixed' => [
+                'inputOrder' => [$folder, $file, $unprefixed],
+            ],
+            'folder, unprefixed, file' => [
+                'inputOrder' => [$folder, $unprefixed, $file],
+            ],
+            'file, folder, unprefixed' => [
+                'inputOrder' => [$file, $folder, $unprefixed],
+            ],
+            'file, unprefixed, folder' => [
+                'inputOrder' => [$file, $unprefixed, $folder],
+            ],
+            'unprefixed, folder, file' => [
+                'inputOrder' => [$unprefixed, $folder, $file],
+            ],
+            'unprefixed, file, folder' => [
+                'inputOrder' => [$unprefixed, $file, $folder],
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetLocalisedTreeDataSortOrderIgnoresInputOrder')]
+    public function testGetLocalisedTreeDataSortOrderIgnoresInputOrder(array $inputOrder): void
+    {
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('sort_order')], true);
+        $docData = $this->getRawDocData($manifest);
+        $localeData = $docData[self::MODULE]['en'];
+        $reordered = ['section_d' => $localeData['section_d']];
+        foreach ($inputOrder as $slug) {
+            $reordered[$slug] = $localeData[$slug];
+        }
+        $docData[self::MODULE]['en'] = $reordered;
+        (new ReflectionProperty(UserDocsManifest::class, 'docData'))->setValue($manifest, $docData);
+
+        $children = $manifest->getLocalisedTreeData()['section_d']['children'] ?? [];
+
+        $this->assertSame(
+            ['section_d/folder', 'section_d/file', 'section_d/unprefixed'],
+            array_column($children, 'slug')
+        );
     }
 
     public static function provideGetLocalisedDocData(): array

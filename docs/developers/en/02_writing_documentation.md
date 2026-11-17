@@ -46,8 +46,8 @@ The content for a folder comes from the `index.md` file in that folder. If a roo
 Documentation at the same level of the navigation tree is sorted in a similar way to the [Silverstripe CMS developer documentation](https://docs.silverstripe.org):
 
 - If two folders/files both have a numeric prefix, the lower number comes first (e.g. `01_file50.md` comes before `02_file1.md`). If the number is the same, folders come before files, and then they are sorted by title.
-- Otherwise, files come before folders.
 - Folders/files with a numeric prefix come before folders/files with no numeric prefix.
+- If neither has a numeric prefix, files come before folders.
 - Other folders/files are sorted alphabetically by their [navigation tree title](#navigation-tree-titles). Numbers and version numbers (e.g. `1.10.0`) are sorted by value.
 
 The navigation tree title comes from the frontmatter if it's set, so localised documentation is sorted by its localised titles. Titles are compared with the rules of the CMS user's language, so case and accents don't put words out of order.
