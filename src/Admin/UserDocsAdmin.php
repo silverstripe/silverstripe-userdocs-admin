@@ -22,6 +22,7 @@ use SilverStripe\Model\List\PaginatedList;
 use SilverStripe\ORM\FieldType\DBField;
 use SilverStripe\ORM\FieldType\DBHTMLText;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
+use SilverStripe\UserDocs\Markdown\Breadcrumbs\BreadcrumbsExtension;
 use SilverStripe\UserDocs\Search\SearchForm;
 use SilverStripe\UserDocs\Search\SearchIndex;
 
@@ -166,11 +167,13 @@ class UserDocsAdmin extends LeftAndMain
         }
         /** @var MarkdownConverter $converter */
         $converter = Injector::inst()->create(MarkdownConverter::class . '.userdocs');
-        $converter->getEnvironment()->addExtension(BaseUrlMarkdownExtension::create(
+        $environment = $converter->getEnvironment();
+        $environment->addExtension(BaseUrlMarkdownExtension::create(
             $this->Link('docs'),
             $docData,
             $this->Link('image')
         ));
+        $environment->addExtension(BreadcrumbsExtension::create($this->getBreadcrumbsForSlug($slug)));
         return $converter->convert(file_get_contents($docData['filePath']))->getContent();
     }
 
