@@ -1,0 +1,5 @@
+---
+extends: yes
+---
+
+Content.

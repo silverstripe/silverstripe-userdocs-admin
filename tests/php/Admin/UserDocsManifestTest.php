@@ -9,18 +9,22 @@ use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
 use ReflectionProperty;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\Core\Manifest\Module;
 use SilverStripe\Core\Manifest\ModuleLoader;
 use SilverStripe\Core\Manifest\ModuleManifest;
 use SilverStripe\Core\Path;
 use SilverStripe\Dev\SapphireTest;
 use SilverStripe\i18n\i18n;
 use SilverStripe\UserDocs\Admin\UserDocsManifest;
+use SilverStripe\UserDocs\Tests\ExtensionModulesTrait;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Psr16Cache;
 use Symfony\Component\Filesystem\Path as FilesystemPath;
 
 class UserDocsManifestTest extends SapphireTest
 {
+    use ExtensionModulesTrait;
+
     private const MODULE = 'silverstripe/userdocs-admin';
 
     /**
@@ -43,6 +47,12 @@ class UserDocsManifestTest extends SapphireTest
         i18n::set_locale('en_US');
     }
 
+    protected function tearDown(): void
+    {
+        $this->popExtensionModules();
+        parent::tearDown();
+    }
+
     public function testHandleFile(): void
     {
         $docData = $this->getRawDocData($this->getDocsManifest())[static::MODULE]['en'];
@@ -52,6 +62,8 @@ class UserDocsManifestTest extends SapphireTest
             'order' => 1,
             'frontMatter' => ['title' => 'Start here'],
             'title' => 'Start here',
+            'isExtension' => false,
+            'extensionKey' => null,
             'isIndex' => true,
             'hasContent' => true,
             'fileName' => 'index.md',
@@ -68,6 +80,8 @@ class UserDocsManifestTest extends SapphireTest
             'order' => 1,
             'frontMatter' => null,
             'title' => 'First page',
+            'isExtension' => false,
+            'extensionKey' => null,
             'isIndex' => false,
             'hasContent' => true,
             'fileName' => '01_first_page.md',
@@ -84,6 +98,8 @@ class UserDocsManifestTest extends SapphireTest
             'order' => 3,
             'frontMatter' => null,
             'title' => 'Nested section',
+            'isExtension' => false,
+            'extensionKey' => null,
             'isIndex' => true,
             'hasContent' => true,
             'fileName' => 'index.md',
@@ -133,6 +149,71 @@ class UserDocsManifestTest extends SapphireTest
         $docDatum = $data['test/renamed-module']['en']['section/page'];
         $this->assertSame('docs', $docDatum['rootPathInModule']);
         $this->assertSame('01_section/01_page.md', $docDatum['pathFromLocale']);
+    }
+
+    public static function provideHandleFileExtends(): array
+    {
+        return [
+            'boolean true uses the module as the key' => [
+                'fileName' => 'bool_true.md',
+                'expectedIsExtension' => true,
+                'expectedKey' => 'silverstripe/userdocs-admin',
+            ],
+            'boolean false' => [
+                'fileName' => 'bool_false.md',
+                'expectedIsExtension' => false,
+                'expectedKey' => null,
+            ],
+            'no extends key' => [
+                'fileName' => 'missing.md',
+                'expectedIsExtension' => false,
+                'expectedKey' => null,
+            ],
+            'module name' => [
+                'fileName' => 'module_name.md',
+                'expectedIsExtension' => true,
+                'expectedKey' => 'test/module-two',
+            ],
+            // Strings are keys, even if they look like booleans.
+            // Keys that aren't installed modules are dropped when the manifest is built.
+            'string "true"' => [
+                'fileName' => 'string_true.md',
+                'expectedIsExtension' => true,
+                'expectedKey' => 'true',
+            ],
+            'empty string' => [
+                'fileName' => 'empty_string.md',
+                'expectedIsExtension' => true,
+                'expectedKey' => '',
+            ],
+            'number' => [
+                'fileName' => 'number.md',
+                'expectedIsExtension' => true,
+                'expectedKey' => '1',
+            ],
+            // YAML 1.2 reads "yes" as a string, even if the yaml PHP extension is installed
+            'yes' => [
+                'fileName' => 'yes.md',
+                'expectedIsExtension' => true,
+                'expectedKey' => 'yes',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideHandleFileExtends')]
+    public function testHandleFileExtends(string $fileName, bool $expectedIsExtension, ?string $expectedKey): void
+    {
+        $data = [];
+        UserDocsManifest::create()->handleFile(
+            $data,
+            $fileName,
+            $this->fixturePath("extends_values/en/01_section/$fileName"),
+            $this->fixturePath('extends_values')
+        );
+
+        $docDatum = $data['silverstripe/userdocs-admin']['en']['section/' . basename($fileName, '.md')];
+        $this->assertSame($expectedIsExtension, $docDatum['isExtension']);
+        $this->assertSame($expectedKey, $docDatum['extensionKey']);
     }
 
     public function testHandleFileWithFrontMatterOnly(): void
@@ -354,6 +435,70 @@ class UserDocsManifestTest extends SapphireTest
                 ],
             ],
         ], $tree['getting_started']);
+    }
+
+    public static function provideGetLocalisedTreeDataWithExtensionTitle(): array
+    {
+        return [
+            'extension in higher priority module' => [
+                'moduleNames' => ['two', 'one'],
+                'expectedTitle' => 'Extended page',
+            ],
+            'extension in lower priority module' => [
+                'moduleNames' => ['one', 'two'],
+                'expectedTitle' => 'Page',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetLocalisedTreeDataWithExtensionTitle')]
+    public function testGetLocalisedTreeDataWithExtensionTitle(array $moduleNames, string $expectedTitle): void
+    {
+        $tree = $this->regenerateWithExtensionModules($moduleNames)->getLocalisedTreeData();
+
+        $this->assertSame($expectedTitle, $tree['section']['children']['page']['title']);
+    }
+
+    public function testGetLocalisedTreeDataWithBlankExtensionTitle(): void
+    {
+        $tree = $this->regenerateWithExtensionModules(['two', 'one'])->getLocalisedTreeData();
+
+        $this->assertSame('Original title', $tree['section']['children']['blank_extension_title']['title']);
+    }
+
+    public function testGetLocalisedTreeDataWithTranslatedExtensionTitle(): void
+    {
+        i18n::set_locale('fr_FR');
+
+        $tree = $this->regenerateWithExtensionModules(['two', 'one'])->getLocalisedTreeData();
+
+        // Module two's French extension comes after module one's page, so its title is used
+        $this->assertSame('Page étendue', $tree['section']['children']['page']['title']);
+    }
+
+    public static function provideGetLocalisedTreeDataWithFallbackExtensionTitle(): array
+    {
+        return [
+            'extension in the same locale as the page' => [
+                'locale' => 'en_US',
+                'expectedTitle' => 'More page',
+            ],
+            'extension in a fallback locale of the page' => [
+                'locale' => 'fr_FR',
+                'expectedTitle' => 'Page',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetLocalisedTreeDataWithFallbackExtensionTitle')]
+    public function testGetLocalisedTreeDataWithFallbackExtensionTitle(string $locale, string $expectedTitle): void
+    {
+        i18n::set_locale($locale);
+
+        $tree = $this->regenerateWithExtensionModules(['three', 'one'])->getLocalisedTreeData();
+
+        // Module three's extension only has English, so its title doesn't replace the title of the French page
+        $this->assertSame($expectedTitle, $tree['section']['children']['page']['title']);
     }
 
     public function testGetLocalisedTreeDataRootWithoutIndex(): void
@@ -694,6 +839,280 @@ class UserDocsManifestTest extends SapphireTest
         $this->assertTrue($treeNode['hasContent']);
     }
 
+    public static function provideGetLocalisedDocDataWithExtension(): array
+    {
+        return [
+            'extension in higher priority module' => [
+                'moduleNames' => ['two', 'one'],
+            ],
+            'extension in lower priority module' => [
+                'moduleNames' => ['one', 'two'],
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetLocalisedDocDataWithExtension')]
+    public function testGetLocalisedDocDataWithExtension(array $moduleNames): void
+    {
+        $docDatum = $this->regenerateWithExtensionModules($moduleNames)->getLocalisedDocData()['section/page'];
+
+        // The original stays the main doc whichever module has the higher priority
+        $this->assertSame($this->extensionDocPath('one', '01_page.md'), $docDatum['filePath']);
+        $this->assertSame(
+            [$this->extensionDocPath('two', '01_page.md')],
+            array_column($docDatum['extensions'], 'filePath')
+        );
+    }
+
+    public function testGetLocalisedDocDataWithMultipleExtensions(): void
+    {
+        $docDatum = $this->regenerateWithExtensionModules(['two', 'three', 'one'])
+            ->getLocalisedDocData()['section/page'];
+
+        // Extensions are in the reverse of the ModuleManifest order, i.e. lowest priority first
+        $extensionModules = ['test/module-three', 'test/module-two'];
+        $manifestOrder = array_map(
+            fn (Module $module) => $module->getName(),
+            array_values(ModuleLoader::inst()->getManifest()->getModules())
+        );
+        $expectedOrder = array_values(array_reverse(array_intersect($manifestOrder, $extensionModules)));
+        $this->assertSame($expectedOrder, array_column($docDatum['extensions'], 'module'));
+    }
+
+    public static function provideGetLocalisedDocDataWithExtensionWithoutOriginal(): array
+    {
+        return [
+            'extension with content' => [
+                'slug' => 'section/extension_only',
+            ],
+            'extension without content' => [
+                'slug' => 'section/empty_extension_only',
+            ],
+            'extension of a module that does not have the page' => [
+                'slug' => 'section/unused_extension_only',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetLocalisedDocDataWithExtensionWithoutOriginal')]
+    public function testGetLocalisedDocDataWithExtensionWithoutOriginal(string $slug): void
+    {
+        $docData = $this->regenerateWithExtensionModules(['two', 'one'])->getLocalisedDocData();
+
+        // Extensions are never shown as a page
+        $this->assertArrayNotHasKey($slug, $docData);
+    }
+
+    public function testGetLocalisedDocDataWithOverrideAfterExtension(): void
+    {
+        $docDatum = $this->regenerateWithExtensionModules(['four', 'two', 'one'])
+            ->getLocalisedDocData()['section/page'];
+
+        // Module four replaces the original, but extensions from other modules are kept
+        $this->assertSame($this->extensionDocPath('four', '01_page.md'), $docDatum['filePath']);
+        $this->assertSame(
+            [$this->extensionDocPath('two', '01_page.md')],
+            array_column($docDatum['extensions'], 'filePath')
+        );
+    }
+
+    public function testGetLocalisedDocDataWithOverriddenExtension(): void
+    {
+        $docDatum = $this->regenerateWithExtensionModules(['three', 'two', 'one'])
+            ->getLocalisedDocData()['section/overridden'];
+
+        // Module three's file replaces module two's extension
+        $this->assertSame(['test/module-two'], array_keys($docDatum['extensions']));
+        $this->assertSame(
+            $this->extensionDocPath('three', '06_overridden.md'),
+            $docDatum['extensions']['test/module-two']['filePath']
+        );
+    }
+
+    public function testGetLocalisedDocDataWithOverriddenExtensionFromLowerPriorityModule(): void
+    {
+        $docDatum = $this->regenerateWithExtensionModules(['two', 'three', 'one'])
+            ->getLocalisedDocData()['section/overridden'];
+
+        // Module three has a lower priority than module two, so it can't replace module two's extension
+        $this->assertSame(
+            $this->extensionDocPath('two', '06_overridden.md'),
+            $docDatum['extensions']['test/module-two']['filePath']
+        );
+    }
+
+    public function testGetLocalisedDocDataWithRemovedExtension(): void
+    {
+        $docDatum = $this->regenerateWithExtensionModules(['three', 'two', 'one'])
+            ->getLocalisedDocData()['section/removed'];
+
+        // An override without content takes the place of the extension, so there's nothing to show
+        $extension = $docDatum['extensions']['test/module-two'];
+        $this->assertSame($this->extensionDocPath('three', '07_removed.md'), $extension['filePath']);
+        $this->assertFalse($extension['hasContent']);
+    }
+
+    public function testGetLocalisedDocDataWithExtensionKeyOrder(): void
+    {
+        $docDatum = $this->regenerateWithExtensionModules(['three', 'four', 'two', 'one'])
+            ->getLocalisedDocData()['section/overridden'];
+
+        // Module three's override is ordered as module two's extension, so it comes before module four's
+        $this->assertSame(['test/module-two', 'test/module-four'], array_keys($docDatum['extensions']));
+    }
+
+    public static function provideRegenerateWithUnusedExtensionKey(): array
+    {
+        return [
+            'module that isn\'t installed' => [
+                'slug' => 'section/uninstalled',
+                'fileName' => '09_uninstalled.md',
+                'expectWarning' => false,
+            ],
+            'not a module name' => [
+                'slug' => 'section/invalid_key',
+                'fileName' => '08_invalid_key.md',
+                'expectWarning' => true,
+            ],
+        ];
+    }
+
+    #[DataProvider('provideRegenerateWithUnusedExtensionKey')]
+    public function testRegenerateWithUnusedExtensionKey(
+        string $slug,
+        string $fileName,
+        bool $expectWarning
+    ): void {
+        $warnings = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('warning')->willReturnCallback(function (string $message) use (&$warnings) {
+            $warnings[] = $message;
+        });
+        Injector::inst()->registerService($logger, LoggerInterface::class);
+
+        $state = $this->getRawDocData($this->regenerateWithExtensionModules(['two', 'one']));
+
+        // The extension isn't used, but only a value that isn't a module name is reported
+        $this->assertArrayNotHasKey($slug, $state['test/module-two']['en']);
+        $filePath = $this->extensionDocPath('two', $fileName);
+        $this->assertSame(
+            $expectWarning,
+            in_array(
+                "Documentation at $filePath has \"extends: my custom key\", which isn't a module name",
+                $warnings
+            )
+        );
+    }
+
+    public static function provideRegenerateWithUnusedRootExtension(): array
+    {
+        return [
+            'extension of a module that is not installed' => [
+                'fixture' => 'unused_root_extension',
+            ],
+            'extension without an original' => [
+                'fixture' => 'root_extension_without_original',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideRegenerateWithUnusedRootExtension')]
+    public function testRegenerateWithUnusedRootExtension(string $fixture): void
+    {
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath($fixture)], true);
+
+        // The root's index.md isn't used, but the root is still there for its other docs
+        $this->assertSame([
+            'slug' => 'section',
+            'title' => 'Section',
+            'isIndex' => false,
+            'hasContent' => false,
+            'children' => [
+                'page' => [
+                    'slug' => 'section/page',
+                    'title' => 'Page',
+                    'isIndex' => false,
+                    'hasContent' => true,
+                ],
+            ],
+        ], $manifest->getLocalisedTreeData()['section']);
+    }
+
+    public function testGetLocalisedDocDataWithRootExtensionWithoutDocs(): void
+    {
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('root_extension_without_docs')], true);
+
+        // No other doc needs the root, so it isn't added as a placeholder
+        $this->assertSame([], $manifest->getLocalisedDocData());
+        $this->assertSame([], $manifest->getDocData('en'));
+    }
+
+    public function testRegenerateWithExtensionWithoutContent(): void
+    {
+        $warnings = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('warning')->willReturnCallback(function (string $message) use (&$warnings) {
+            $warnings[] = $message;
+        });
+        Injector::inst()->registerService($logger, LoggerInterface::class);
+
+        $this->regenerateWithExtensionModules(['three', 'two', 'one']);
+
+        // Extensions without content are allowed, but a page without content is still reported
+        $this->assertSame(
+            ['Documentation at ' . $this->extensionDocPath('one', '04_empty_original.md') . ' has no content'],
+            array_values(array_filter($warnings, fn (string $warning) => str_ends_with($warning, 'has no content')))
+        );
+    }
+
+    public function testGetLocalisedDocDataWithOverriddenExtensionAndTranslation(): void
+    {
+        i18n::set_locale('fr_FR');
+
+        $docDatum = $this->regenerateWithExtensionModules(['three', 'two', 'one'])
+            ->getLocalisedDocData()['section/overridden'];
+
+        // Module three has priority, so its English override is used instead of module two's French extension
+        $this->assertSame(
+            $this->extensionDocPath('three', '06_overridden.md'),
+            $docDatum['extensions']['test/module-two']['filePath']
+        );
+    }
+
+    public function testGetLocalisedDocDataWithTranslatedExtension(): void
+    {
+        i18n::set_locale('fr_FR');
+
+        $docDatum = $this->regenerateWithExtensionModules(['three', 'two', 'one'])
+            ->getLocalisedDocData()['section/page'];
+
+        // The page and module two's extension are translated, but module three's extension falls back to English
+        $this->assertSame($this->extensionDocPath('one', '01_page.md', 'fr'), $docDatum['filePath']);
+        $this->assertSame(
+            [
+                'test/module-two' => $this->extensionDocPath('two', '01_page.md', 'fr'),
+                'test/module-three' => $this->extensionDocPath('three', '01_page.md'),
+            ],
+            array_map(fn (array $extension) => $extension['filePath'], $docDatum['extensions'])
+        );
+    }
+
+    public function testGetLocalisedDocDataWithExtensionTranslatedByAnotherModule(): void
+    {
+        i18n::set_locale('fr_FR');
+
+        $docDatum = $this->regenerateWithExtensionModules(['four', 'three', 'two', 'one'])
+            ->getLocalisedDocData()['section/page'];
+
+        // Module four has a French translation of module three's extension
+        $this->assertSame(
+            $this->extensionDocPath('four', '01_page.md', 'fr'),
+            $docDatum['extensions']['test/module-three']['filePath']
+        );
+    }
+
     public function testRegenerateWithFileDirectlyUnderLocale(): void
     {
         $manifest = new UserDocsManifest();
@@ -790,6 +1209,30 @@ class UserDocsManifestTest extends SapphireTest
         $this->assertSame('test/module-a', $manifest->getDocData('en')['section/page']['module']);
         $this->assertSame('test/module-b', $manifest->getDocData('fr')['section/page']['module']);
         $this->assertSame(['en', 'fr'], array_keys($manifest->getDocData()));
+    }
+
+    public function testGetDocDataWithExtension(): void
+    {
+        $docData = $this->regenerateWithExtensionModules(['two', 'one'])->getDocData();
+
+        // Each locale only uses its own extensions
+        $this->assertSame($this->extensionDocPath('one', '01_page.md'), $docData['en']['section/page']['filePath']);
+        $this->assertSame('Extended page', $docData['en']['section/page']['title']);
+        $this->assertSame(
+            [$this->extensionDocPath('two', '01_page.md')],
+            array_column($docData['en']['section/page']['extensions'], 'filePath')
+        );
+        $this->assertSame(
+            $this->extensionDocPath('one', '01_page.md', 'fr'),
+            $docData['fr']['section/page']['filePath']
+        );
+        $this->assertSame('Page étendue', $docData['fr']['section/page']['title']);
+        $this->assertSame(
+            [$this->extensionDocPath('two', '01_page.md', 'fr')],
+            array_column($docData['fr']['section/page']['extensions'], 'filePath')
+        );
+        // An extension without an original isn't used as the page
+        $this->assertArrayNotHasKey('section/extension_only', $docData['en']);
     }
 
     public function testGetDocDataWithModuleOverrideRootWithoutIndex(): void
@@ -992,6 +1435,25 @@ class UserDocsManifestTest extends SapphireTest
         UserDocsManifest::config()->set('documentation_roots', [
             "silverstripe/userdocs-admin:tests/php/fixtures/$fixture" => true,
         ]);
+    }
+
+    /**
+     * Build a manifest from the docs in the fixture modules, in priority order (highest first)
+     */
+    private function regenerateWithExtensionModules(array $moduleNames): UserDocsManifest
+    {
+        $this->pushExtensionModules($moduleNames);
+        $manifest = UserDocsManifest::create();
+        $manifest->regenerate(
+            array_map(fn (string $moduleName) => $this->getExtensionModulePath($moduleName) . '/docs', $moduleNames),
+            true
+        );
+        return $manifest;
+    }
+
+    private function extensionDocPath(string $moduleName, string $fileName, string $locale = 'en'): string
+    {
+        return $this->getExtensionModulePath($moduleName) . "/docs/$locale/01_section/$fileName";
     }
 
     private function fixturePath(string $path): string

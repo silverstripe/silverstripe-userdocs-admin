@@ -22,6 +22,7 @@ use SilverStripe\Model\List\PaginatedList;
 use SilverStripe\ORM\FieldType\DBField;
 use SilverStripe\ORM\FieldType\DBHTMLText;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
+use SilverStripe\UserDocs\Markdown\ExtensionDocAssembler;
 use SilverStripe\UserDocs\Search\SearchForm;
 use SilverStripe\UserDocs\Search\SearchIndex;
 
@@ -164,14 +165,20 @@ class UserDocsAdmin extends LeftAndMain
         if (!$docData || !$docData['hasContent'] || !file_exists($docData['filePath'])) {
             return null;
         }
+        $assembler = ExtensionDocAssembler::singleton();
         /** @var MarkdownConverter $converter */
         $converter = Injector::inst()->create(MarkdownConverter::class . '.userdocs');
-        $converter->getEnvironment()->addExtension(BaseUrlMarkdownExtension::create(
+        $environment = $converter->getEnvironment();
+        $environment->addExtension(BaseUrlMarkdownExtension::create(
             $this->Link('docs'),
             $docData,
-            $this->Link('image')
+            $this->Link('image'),
+            $assembler->getExtensionData($docData)
         ));
-        return $converter->convert(file_get_contents($docData['filePath']))->getContent();
+        $assembler->addToEnvironment($environment, $docData);
+        $markdown = $assembler->getMarkdown($docData);
+        $html = $converter->convert($markdown);
+        return $html->getContent();
     }
 
     /**

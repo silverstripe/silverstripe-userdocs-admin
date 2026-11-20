@@ -8,6 +8,7 @@ use Normalizer;
 use Psr\SimpleCache\CacheInterface;
 use SilverStripe\Control\Controller;
 use SilverStripe\Core\Manifest\ManifestFileFinder;
+use League\CommonMark\Extension\FrontMatter\Data\SymfonyYamlFrontMatterParser;
 use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
 use Locale;
 use LogicException;
@@ -39,6 +40,12 @@ class UserDocsManifest implements Flushable
     use Injectable;
 
     protected const CACHE_KEY = 'manifest';
+
+    /**
+     * Matches a composer package name, e.g. "silverstripe/admin"
+     * Refer to https://getcomposer.org/doc/04-schema.md#name
+     */
+    private const MODULE_NAME_PATTERN = '#^[a-z0-9]([_.-]?[a-z0-9]+)*/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$#';
 
     /**
      * Paths to directories that contain user documentation.
@@ -151,6 +158,7 @@ class UserDocsManifest implements Flushable
             },
         ]);
         $finder->find(BASE_PATH);
+        $docData = $this->resolveExtensionKeys($docData);
         $this->warnAboutDocsWithoutContent($docData);
         $data = [
             'docData' => $this->sortModulesByPriority($docData),
@@ -190,14 +198,77 @@ class UserDocsManifest implements Flushable
     }
 
     /**
+     * Remove extensions of modules that aren't installed, and store the position of the module
+     * each remaining extension belongs to. A removed extension of a root is replaced with a placeholder.
+     */
+    private function resolveExtensionKeys(array $data): array
+    {
+        $modulePositions = array_flip(array_keys(ModuleLoader::inst()->getManifest()->getModules()));
+        foreach ($data as $module => $moduleData) {
+            foreach ($moduleData as $locale => $localeData) {
+                foreach ($localeData as $slug => $docDatum) {
+                    if (!$docDatum['isExtension']) {
+                        continue;
+                    }
+                    $key = $docDatum['extensionKey'];
+                    if (isset($modulePositions[$key])) {
+                        $data[$module][$locale][$slug]['extensionPosition'] = $modulePositions[$key];
+                        continue;
+                    }
+                    // An extension of a module that isn't installed is silently ignored,
+                    // but a key that isn't a module name is probably a mistake.
+                    if (!preg_match(UserDocsManifest::MODULE_NAME_PATTERN, $key)) {
+                        Injector::inst()->get(LoggerInterface::class)->warning(
+                            "Documentation at {$docDatum['filePath']} has \"extends: $key\", which isn't"
+                            . ' a module name'
+                        );
+                    }
+                    if (str_contains((string) $slug, '/')) {
+                        unset($data[$module][$locale][$slug]);
+                        continue;
+                    }
+                    // Other docs in this root need the root, so replace the root's index.md with a placeholder
+                    $data[$module][$locale][$slug] = $this->createRootPlaceholder($docDatum);
+                }
+            }
+        }
+        return $data;
+    }
+
+    /**
+     * Get placeholder data for a root folder, from the data for the index.md file of that root.
+     */
+    private function createRootPlaceholder(array $indexDocDatum): array
+    {
+        $rootDir = dirname($indexDocDatum['filePath']);
+        return [
+            ...$indexDocDatum,
+            'frontMatter' => [],
+            'title' => $this->fileNameToTitle(basename($rootDir), $rootDir),
+            'isExtension' => false,
+            'extensionKey' => null,
+            'isIndex' => false,
+            'hasContent' => false,
+            'fileName' => basename($rootDir),
+            'filePath' => $rootDir,
+            'pathFromLocale' => dirname($indexDocDatum['pathFromLocale']),
+        ];
+    }
+
+    /**
      * Only root nodes are allowed to lack content, so log a warning for any other doc without content.
+     * Extensions without content are allowed, because they can remove another extension or only change a title.
      */
     private function warnAboutDocsWithoutContent(array $data): void
     {
         foreach ($data as $moduleData) {
             foreach ($moduleData as $localeData) {
                 foreach ($localeData as $docDatum) {
-                    if (!$docDatum['hasContent'] && str_contains($docDatum['slug'], '/')) {
+                    if (
+                        !$docDatum['hasContent']
+                        && !$docDatum['isExtension']
+                        && str_contains($docDatum['slug'], '/')
+                    ) {
                         Injector::inst()->get(LoggerInterface::class)->warning(
                             'Documentation at ' . $docDatum['filePath'] . ' has no content'
                         );
@@ -359,6 +430,7 @@ class UserDocsManifest implements Flushable
         $isIndex = $fileName === 'index.md';
         $moduleObj = ModuleLoader::inst()->getManifest()->getModuleByPath($filePath);
         $module = $moduleObj->getName();
+        $extensionKey = $this->getExtensionKey($frontMatter['extends'] ?? false, $module);
 
         $pathFromBase = ltrim(FilesystemPath::makeRelative($filePath, $basePath), '/');
         $locale = explode('/', $pathFromBase)[0];
@@ -392,6 +464,8 @@ class UserDocsManifest implements Flushable
             'order' => $this->extractOrderFromFilename($isIndex ? basename(dirname($filePath)) : $fileName),
             'frontMatter' => $frontMatter,
             'title' => $title !== '' ? $title : $this->fileNameToTitle($fileName, $filePath),
+            'isExtension' => $extensionKey !== null,
+            'extensionKey' => $extensionKey,
             'isIndex' => $isIndex,
             'hasContent' => $hasContent,
             'fileName' => $fileName,
@@ -416,7 +490,11 @@ class UserDocsManifest implements Flushable
         if (is_dir($filePath)) {
             return [[], false];
         }
-        $frontMatterExtension = new FrontMatterExtension();
+        // Use the same YAML parser on all hosts, so values such as "yes" are read the same way
+        $frontMatterExtension = Injector::inst()->create(
+            FrontMatterExtension::class,
+            Injector::inst()->create(SymfonyYamlFrontMatterParser::class)
+        );
         $result = $frontMatterExtension->getFrontMatterParser()->parse(file_get_contents($filePath));
         return [$result->getFrontMatter(), !empty(trim($result->getContent()))];
     }
@@ -455,25 +533,48 @@ class UserDocsManifest implements Flushable
      * For each locale, the doc from the module with the highest priority that has the doc in that locale is used.
      * Note that this does not include the locale fallbacks - use getLocalisedDocData()
      * if you need the data to be flowing through the locale cascade.
+     * Extensions are added to each doc in the same way as getLocalisedDocData().
      *
      * @return array Doc data keyed by slug if a locale is given, otherwise keyed by locale then slug
      */
     public function getDocData(?string $locale = null): array
     {
         if ($this->docDataByLocale === null) {
-            $this->docDataByLocale = [];
+            $pages = [];
+            $extensions = [];
             foreach ($this->docData as $moduleData) {
                 foreach ($moduleData as $moduleLocale => $localeData) {
                     foreach ($localeData as $slug => $docDatum) {
+                        if ($docDatum['isExtension']) {
+                            $extensions[$moduleLocale][$slug][$docDatum['extensionKey']] ??= $docDatum;
+                            continue;
+                        }
                         // A doc from a higher priority module wins,
                         // unless it's only a placeholder for a root folder without an index.md file
-                        $existing = $this->docDataByLocale[$moduleLocale][$slug] ?? null;
+                        $existing = $pages[$moduleLocale][$slug] ?? null;
                         if (
                             !$existing
                             || ($this->isRootWithoutIndex($existing) && !$this->isRootWithoutIndex($docDatum))
                         ) {
-                            $this->docDataByLocale[$moduleLocale][$slug] = $docDatum;
+                            $pages[$moduleLocale][$slug] = $docDatum;
                         }
+                    }
+                }
+            }
+            $this->docDataByLocale = [];
+            foreach (array_keys($pages + $extensions) as $moduleLocale) {
+                $localePages = $pages[$moduleLocale] ?? [];
+                $localeExtensions = $extensions[$moduleLocale] ?? [];
+                $parentSlugs = array_flip(array_column($localePages, 'parentSlug'));
+                foreach (array_keys($localePages + $localeExtensions) as $slug) {
+                    $docDatum = $this->addExtensions(
+                        $localePages[$slug] ?? null,
+                        $localeExtensions[$slug] ?? [],
+                        [$moduleLocale],
+                        isset($parentSlugs[$slug])
+                    );
+                    if ($docDatum !== null) {
+                        $this->docDataByLocale[$moduleLocale][$slug] = $docDatum;
                     }
                 }
             }
@@ -490,6 +591,9 @@ class UserDocsManifest implements Flushable
      * For each doc, the module with the highest priority that has the doc in any of the current locales is used.
      * Within that module, the current locale falls back to the shortened locale and then to the default locale.
      * For example pt_BR will fallback to pt which will then fallback to en_US which falls back to en.
+     *
+     * Extensions are kept separately for each doc, keyed by their extension key. Each extension key uses the same
+     * rules as docs, and falls back separately from the doc it extends.
      */
     public function getLocalisedDocData(): array
     {
@@ -498,19 +602,37 @@ class UserDocsManifest implements Flushable
         if (isset($this->localisedDocData[$key])) {
             return $this->localisedDocData[$key];
         }
-        $result = [];
+        $pages = [];
+        $extensions = [];
         foreach ($this->docData as $moduleData) {
             foreach ($locales as $locale) {
                 foreach ($moduleData[$locale] ?? [] as $slug => $docDatum) {
+                    if ($docDatum['isExtension']) {
+                        $extensions[$slug][$docDatum['extensionKey']] ??= $docDatum;
+                        continue;
+                    }
                     // A doc from a higher priority module or locale wins,
                     // unless it's only a placeholder for a root folder without an index.md file
                     if (
-                        !isset($result[$slug])
-                        || ($this->isRootWithoutIndex($result[$slug]) && !$this->isRootWithoutIndex($docDatum))
+                        !isset($pages[$slug])
+                        || ($this->isRootWithoutIndex($pages[$slug]) && !$this->isRootWithoutIndex($docDatum))
                     ) {
-                        $result[$slug] = $docDatum;
+                        $pages[$slug] = $docDatum;
                     }
                 }
+            }
+        }
+        $result = [];
+        $parentSlugs = array_flip(array_column($pages, 'parentSlug'));
+        foreach (array_keys($pages + $extensions) as $slug) {
+            $docDatum = $this->addExtensions(
+                $pages[$slug] ?? null,
+                $extensions[$slug] ?? [],
+                $locales,
+                isset($parentSlugs[$slug])
+            );
+            if ($docDatum !== null) {
+                $result[$slug] = $docDatum;
             }
         }
         $this->localisedDocData[$key] = $this->sortDocData($result, $locales[0]);
@@ -612,6 +734,73 @@ class UserDocsManifest implements Flushable
     private function isRootWithoutIndex(array $docDatum): bool
     {
         return !$docDatum['isIndex'] && !str_contains($docDatum['slug'], '/');
+    }
+
+    /**
+     * Get the key that identifies an extension from the value of "extends" in its frontmatter.
+     * The key is the name of the module whose extension this is.
+     * Returns null if the doc isn't an extension.
+     */
+    private function getExtensionKey(mixed $extends, string $module): ?string
+    {
+        if ($extends === false) {
+            return null;
+        }
+        if ($extends === true) {
+            return $module;
+        }
+        // Other values aren't module names, but they are converted so a warning can be logged
+        return is_string($extends) ? $extends : var_export($extends, true);
+    }
+
+    /**
+     * Add the extensions to a doc, so that extensions from lower priority modules come first.
+     * The order uses the module the extension belongs to, so replacing an extension doesn't move it.
+     *
+     * A title from an extension in a higher priority module replaces the title of the doc,
+     * unless the extension is in a lower fallback locale than the doc.
+     *
+     * Extensions aren't shown without the doc they extend. If there's no doc, the result is null,
+     * or a placeholder for a root that has other docs in it.
+     *
+     * @param array|null $docDatum The doc, or null if only extensions have this slug
+     * @param array $extensions The extensions for the doc, keyed by extension key
+     * @param string[] $locales The locales in order of precedence
+     * @param bool $hasChildDocs Whether other docs have this slug as their parent
+     */
+    private function addExtensions(?array $docDatum, array $extensions, array $locales, bool $hasChildDocs): ?array
+    {
+        if ($docDatum === null) {
+            $extension = reset($extensions);
+            if (!$extension || !$hasChildDocs || str_contains((string) $extension['slug'], '/')) {
+                return null;
+            }
+            $placeholder = $this->createRootPlaceholder($extension);
+            $placeholder['extensions'] = [];
+            return $placeholder;
+        }
+        // Most docs have no extensions, so don't do the work below for them
+        if (empty($extensions)) {
+            $docDatum['extensions'] = [];
+            return $docDatum;
+        }
+        uasort($extensions, fn (array $a, array $b) => $b['extensionPosition'] <=> $a['extensionPosition']);
+        $moduleRanks = array_flip(array_keys($this->docData));
+        $localeRanks = array_flip($locales);
+        $titleRank = $moduleRanks[$docDatum['module']];
+        foreach ($extensions as $extension) {
+            $extensionRank = $moduleRanks[$extension['module']];
+            if (
+                trim($extension['frontMatter']['title'] ?? '') !== ''
+                && $extensionRank < $titleRank
+                && $localeRanks[$extension['locale']] <= $localeRanks[$docDatum['locale']]
+            ) {
+                $docDatum['title'] = $extension['title'];
+                $titleRank = $extensionRank;
+            }
+        }
+        $docDatum['extensions'] = $extensions;
+        return $docDatum;
     }
 
     /**

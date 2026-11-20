@@ -7,6 +7,7 @@ use Error;
 use League\CommonMark\Extension\CommonMark\Node\Block\FencedCode;
 use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
 use RuntimeException;
 use SilverStripe\Core\Injector\Injector;
@@ -106,6 +107,29 @@ class SearchIndexTest extends SapphireTest
             return false;
         }
         return true;
+    }
+
+    /**
+     * Register a manifest with an "extended" page whose extension doc has the word "harpsichord"
+     */
+    private function registerManifestWithExtension(string $extensionFileName = 'extension.md'): void
+    {
+        Injector::inst()->registerService(new StubUserDocsManifest([
+            'en' => [
+                'extended' => [
+                    'title' => 'Extended',
+                    'hasContent' => true,
+                    'filePath' => Path::join(__DIR__, 'SearchIndexTest', 'other.md'),
+                    'slug' => 'extended',
+                    'extensions' => [
+                        'test/module' => [
+                            'hasContent' => true,
+                            'filePath' => Path::join(__DIR__, 'SearchIndexTest', $extensionFileName),
+                        ],
+                    ],
+                ],
+            ],
+        ]), UserDocsManifest::class);
     }
 
     protected function tearDown(): void
@@ -815,6 +839,17 @@ class SearchIndexTest extends SapphireTest
         $this->assertSame($expected, array_column($results, 'slug'));
     }
 
+    public function testSearchExtensionContent(): void
+    {
+        $this->registerManifestWithExtension();
+        $index = SearchIndex::create();
+        $index->init();
+
+        $results = $index->search([SearchForm::DEFAULT_SEARCH_FIELD => 'harpsichord']);
+
+        $this->assertSame(['extended'], array_column($results, 'slug'));
+    }
+
     public function testSearchExcludesTableOfContents(): void
     {
         // A heading match is worth much less than body text, so the page with "shortcuts" in its body
@@ -964,6 +999,37 @@ class SearchIndexTest extends SapphireTest
         $summary = $index->createSummary('variables', static::PAGE_IDS['template_syntax'], $highlight);
 
         $this->assertSame($expected, $summary);
+    }
+
+    public function testCreateSummaryExtensionContent(): void
+    {
+        $this->registerManifestWithExtension();
+        $index = SearchIndex::create();
+        $index->init();
+        $pageId = $index->search([SearchForm::DEFAULT_SEARCH_FIELD => 'harpsichord'])[0]['id'];
+
+        $summary = $index->createSummary('harpsichord', $pageId);
+
+        $this->assertSame('Other Nothing relevant here except shortcuts. Play the <em>harpsichord</em>.', $summary);
+    }
+
+    public function testCreateSummaryLogsNoWarnings(): void
+    {
+        $warnings = [];
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->method('warning')->willReturnCallback(function (string $message) use (&$warnings) {
+            $warnings[] = $message;
+        });
+        Injector::inst()->registerService($logger, LoggerInterface::class);
+        $this->registerManifestWithExtension('invalid_extension.md');
+        $index = SearchIndex::create();
+        $index->init();
+        $this->assertCount(1, $warnings, 'Indexing logs the warning');
+
+        // "extended" is the first of the sorted slugs, so its ID is 1
+        $index->createSummary('shortcuts', 1);
+
+        $this->assertCount(1, $warnings);
     }
 
     public function testCreateSummaryStopWords(): void
