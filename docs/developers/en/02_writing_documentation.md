@@ -56,7 +56,7 @@ The navigation tree title comes from the frontmatter if it's set, so localised d
 
 The title of a page of documentation in the navigation tree is derived by default from the name of the folder/file that represents it. For example `00_some_documentation.md` will have the title "Some documentation" by default.
 
-If you want to update the navigation tree title for a page, you can do this using [frontmatter](#frontmatter-metadata). For a folder, set the title in the frontmatter of its `index.md` file.
+If you want to update the navigation tree title for a page, you can do this using [frontmatter](#frontmatter-metadata). For a folder, set the title in the frontmatter of its `index.md` file. To change the title of a page from another module without altering content, see [extending documentation](./extending_documentation#extending-pages).
 
 Note that the navigation tree title is not used in the documentation page itself. You should still include a `h1` heading to title your documentation page.
 
@@ -64,14 +64,18 @@ Note that the navigation tree title is not used in the documentation page itself
 
 Documentation pages can include metadata in the form of frontmatter. This is YAML in a block fenced by `---` at the top of the file. For example:
 
-```text
+```yml
 ---
-title: My page title
-moredata: This is just some more data
+title: "My page title"
+extends: true
+moredata: "This is just some more data"
 ---
 ```
 
-You can include any information you want in the frontmatter, but the only information that will be used by this module is the title, which is used to override the default navigation tree title.
+You can include any information you want in the frontmatter, but the only information that will be used by this module is as follows:
+
+- `title`: (string) The navigation tree title for the page (see [navigation tree titles](#navigation-tree-titles))
+- `extends`: (`true` or a module name) If set, the content from this file is appended to the content from the original instead of replacing it. A module name replaces, removes or translates that module's extension (see [extending documentation](./extending_documentation))
 
 ## Links between docs
 
