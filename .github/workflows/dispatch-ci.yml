@@ -1,0 +1,45 @@
+name: Dispatch CI
+
+on:
+  # At 4:20 PM UTC, only on Friday, Saturday, and Sunday
+  schedule:
+    - cron: '20 16 * * 5,6,0'
+  workflow_dispatch:
+    inputs:
+      major_type:
+        description: 'Major branch type'
+        required: true
+        type: choice
+        options:
+          - 'dynamic'
+          - 'current'
+          - 'next'
+          - 'previous'
+        default: 'dynamic'
+      minor_type:
+        description: 'Minor branch type'
+        required: true
+        type: choice
+        options:
+          - 'dynamic'
+          - 'next-minor'
+          - 'next-patch'
+        default: 'dynamic'
+
+permissions: {}
+
+jobs:
+  dispatch-ci:
+    name: Dispatch CI
+    # Only run cron on the silverstripe account
+    if: (github.event_name == 'schedule' && github.repository_owner == 'silverstripe') || (github.event_name != 'schedule')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Dispatch CI
+        uses: silverstripe/gha-dispatch-ci@v1
+        with:
+          major_type: ${{ inputs.major_type }}
+          minor_type: ${{ inputs.minor_type }}
