@@ -61,7 +61,8 @@
     border-left: .25rem solid $border-color;
     padding-left: $spacer;
 
-    > :last-child {
+    > :last-child,
+    > .userdocs-extension-content:last-child > :last-child {
       margin-bottom: 0;
     }
   }

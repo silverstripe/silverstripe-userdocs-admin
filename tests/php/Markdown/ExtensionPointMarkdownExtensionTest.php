@@ -7,6 +7,7 @@ use League\CommonMark\Event\DocumentParsedEvent;
 use League\CommonMark\Extension\Attributes\AttributesExtension;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
 use League\CommonMark\Extension\HeadingPermalink\HeadingPermalinkExtension;
+use League\CommonMark\Extension\TableOfContents\TableOfContentsExtension;
 use League\CommonMark\MarkdownConverter;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
@@ -14,6 +15,7 @@ use SilverStripe\Core\Injector\Injector;
 use SilverStripe\Dev\SapphireTest;
 use SilverStripe\UserDocs\Markdown\ExtensionDocMarker;
 use SilverStripe\UserDocs\Markdown\ExtensionPointMarkdownExtension;
+use SilverStripe\UserDocs\Markdown\TableOfContentsEventHandler;
 
 class ExtensionPointMarkdownExtensionTest extends SapphireTest
 {
@@ -324,30 +326,164 @@ class ExtensionPointMarkdownExtensionTest extends SapphireTest
         );
     }
 
+    public static function provideOnDocumentParsedLang(): array
+    {
+        $wrapperStart = '<div class="userdocs-extension-content" lang="fr">';
+        return [
+            'same locale is not wrapped' => [
+                'original' => static::ORIGINAL,
+                'extensions' => ["Appended\n\n<!-- userdocs-insert-at: middle -->\n\nInserted"],
+                'extensionLocales' => ['en'],
+                'expected' => "<p>Before</p>\n<p>Inserted</p>\n<p>After</p>\n<p>Appended</p>",
+            ],
+            'extension without a locale is not wrapped' => [
+                'original' => static::ORIGINAL,
+                'extensions' => ['Appended'],
+                'extensionLocales' => [],
+                'expected' => "<p>Before</p>\n<p>After</p>\n<p>Appended</p>",
+            ],
+            'content added to the end' => [
+                'original' => static::ORIGINAL,
+                'extensions' => ["Appended\n\nMore"],
+                'extensionLocales' => ['fr'],
+                'expected' => "<p>Before</p>\n<p>After</p>\n$wrapperStart\n<p>Appended</p>\n<p>More</p>\n</div>",
+            ],
+            'each chunk is wrapped where it goes' => [
+                'original' => static::ORIGINAL,
+                'extensions' => ["Appended\n\n<!-- userdocs-insert-at: middle -->\n\nInserted"],
+                'extensionLocales' => ['fr'],
+                'expected' => "<p>Before</p>\n$wrapperStart\n<p>Inserted</p>\n</div>\n<p>After</p>\n"
+                    . "$wrapperStart\n<p>Appended</p>\n</div>",
+            ],
+            'content near a heading' => [
+                'original' => "## A\n\nA text",
+                'extensions' => ["<!-- userdocs-insert-after: #a -->\n\nInserted"],
+                'extensionLocales' => ['fr'],
+                'expected' => "<h2 id=\"prefix-a\">A</h2>\n$wrapperStart\n<p>Inserted</p>\n</div>\n<p>A text</p>",
+            ],
+            'each extension has its own language' => [
+                'original' => static::ORIGINAL,
+                'extensions' => ['French', 'English', 'Canadian French'],
+                'extensionLocales' => ['fr', 'en', 'fr_CA'],
+                'expected' => "<p>Before</p>\n<p>After</p>\n$wrapperStart\n<p>French</p>\n</div>\n<p>English</p>\n"
+                    . "<div class=\"userdocs-extension-content\" lang=\"fr-CA\">\n<p>Canadian French</p>\n</div>",
+            ],
+            'removed content is not wrapped' => [
+                'original' => static::ORIGINAL,
+                'extensions' => ["<!-- userdocs-insert-at: missing -->\n\nRemoved"],
+                'extensionLocales' => ['fr'],
+                'expected' => "<p>Before</p>\n<p>After</p>",
+            ],
+            'paragraphs in a tight list are in a span' => [
+                'original' => "- Item\n  <!-- userdocs-extension-point: middle -->\n- Other",
+                'extensions' => ["<!-- userdocs-insert-at: middle -->\n\nInserted\n\nMore"],
+                'extensionLocales' => ['fr'],
+                'expected' => "<ul>\n<li>Item\n<span class=\"userdocs-extension-content\" lang=\"fr\">"
+                    . "Inserted\nMore</span>\n</li>\n<li>Other</li>\n</ul>",
+            ],
+            'other content in a tight list is in a div' => [
+                'original' => "- Item\n  <!-- userdocs-extension-point: middle -->\n- Other",
+                'extensions' => ["<!-- userdocs-insert-at: middle -->\n\nInserted\n\n- Nested"],
+                'extensionLocales' => ['fr'],
+                'expected' => "<ul>\n<li>Item\n$wrapperStart\nInserted\n<ul>\n<li>Nested</li>\n</ul>\n</div>"
+                    . "\n</li>\n<li>Other</li>\n</ul>",
+            ],
+            'paragraphs in a loose list are in a div' => [
+                'original' => "- Item\n\n  <!-- userdocs-extension-point: middle -->",
+                'extensions' => ["<!-- userdocs-insert-at: middle -->\n\nInserted"],
+                'extensionLocales' => ['fr'],
+                'expected' => "<ul>\n<li>\n<p>Item</p>\n$wrapperStart\n<p>Inserted</p>\n</div>\n</li>\n</ul>",
+            ],
+        ];
+    }
+
+    #[DataProvider('provideOnDocumentParsedLang')]
+    public function testOnDocumentParsedLang(
+        string $original,
+        array $extensions,
+        array $extensionLocales,
+        string $expected
+    ): void {
+        $html = $this->convert($original, $extensions, docLocale: 'en', extensionLocales: $extensionLocales);
+
+        $this->assertSame($expected, trim($html));
+        $this->assertSame([], $this->warnings);
+    }
+
+    public function testAddLangToTableOfContents(): void
+    {
+        $html = $this->convert(
+            "## Original\n\nText",
+            ['## French', '## English'],
+            docLocale: 'en',
+            extensionLocales: ['fr', 'en'],
+            hasTableOfContents: true
+        );
+
+        $this->assertStringContainsString('<a href="#prefix-original">Original</a>', $html);
+        $this->assertStringContainsString('<a lang="fr" href="#prefix-french">French</a>', $html);
+        $this->assertStringContainsString('<a href="#prefix-english">English</a>', $html);
+    }
+
+    public function testWrapContentAroundTableOfContents(): void
+    {
+        $html = $this->convert(
+            "Intro\n\n<!-- userdocs-extension-point: middle -->",
+            ["<!-- userdocs-insert-at: middle -->\n\n# Titre\n\nTexte\n\n## Section"],
+            docLocale: 'en',
+            extensionLocales: ['fr'],
+            hasTableOfContents: true
+        );
+
+        // The table of contents goes before the first h2, so it splits the French content into two blocks
+        preg_match_all('/^<(\/?div|h[12]|p|ul)[\s>]/m', $html, $matches);
+        $this->assertSame(['p', 'div', 'h1', 'p', '/div', 'ul', 'div', 'h2', '/div'], $matches[1]);
+        $this->assertSame(2, substr_count($html, '<div class="userdocs-extension-content" lang="fr">'));
+    }
+
     /**
      * Convert the original markdown with the content of each extension appended, as UserDocsAdmin does.
      *
      * @param string[] $extensions The markdown content of each extension doc
+     * @param string[] $extensionLocales The locale of each extension doc, keyed the same as $extensions
      */
     private function convert(
         string $original,
         array $extensions,
         bool $hasHeadingPermalinks = true,
-        bool $logWarnings = true
+        bool $logWarnings = true,
+        ?string $docLocale = null,
+        array $extensionLocales = [],
+        bool $hasTableOfContents = false
     ): string {
         $markdown = $original;
         $extensionData = [];
         foreach ($extensions as $i => $extension) {
             $markdown .= "\n\n" . ExtensionDocMarker::getMarker($i) . "\n\n" . $extension;
             $extensionData[$i] = ['filePath' => "/docs/extension$i.md"];
+            if (isset($extensionLocales[$i])) {
+                $extensionData[$i]['locale'] = $extensionLocales[$i];
+            }
         }
         $docData = ['filePath' => '/docs/page.md'];
+        if ($docLocale !== null) {
+            $docData['locale'] = $docLocale;
+        }
         $config = [];
         if ($hasHeadingPermalinks) {
             $config['heading_permalink'] = [
                 'apply_id_to_heading' => true,
                 'id_prefix' => 'prefix',
-                'insert' => 'none',
+                'fragment_prefix' => 'prefix',
+                // The table of contents only finds headings that have a permalink
+                'insert' => $hasTableOfContents ? 'after' : 'none',
+            ];
+        }
+        if ($hasTableOfContents) {
+            $config['table_of_contents'] = [
+                'position' => 'placeholder',
+                'placeholder' => '[TOC]',
+                'min_heading_level' => 2,
             ];
         }
         $environment = new Environment($config);
@@ -355,6 +491,15 @@ class ExtensionPointMarkdownExtensionTest extends SapphireTest
         $environment->addExtension(new AttributesExtension());
         if ($hasHeadingPermalinks) {
             $environment->addExtension(new HeadingPermalinkExtension());
+        }
+        if ($hasTableOfContents) {
+            $environment->addExtension(new TableOfContentsExtension());
+            // Place the table of contents as MarkdownEnvironmentFactory does
+            $environment->addEventListener(
+                DocumentParsedEvent::class,
+                [TableOfContentsEventHandler::create(), 'onDocumentParsed'],
+                -140
+            );
         }
         $environment->addExtension(ExtensionPointMarkdownExtension::create($docData, $extensionData, $logWarnings));
         // Section markers aren't removed by the extension, so remove them as UserDocsAdmin does
