@@ -4,5 +4,7 @@ Name: userdocs-config
 SilverStripe\Admin\LeftAndMain:
   extra_requirements_javascript:
     - 'silverstripe/userdocs-admin:client/dist/js/cms.js'
+  extra_requirements_i18n:
+    - 'silverstripe/userdocs-admin:client/lang'
   extra_requirements_css:
     - 'silverstripe/userdocs-admin:client/dist/styles/cms.css'

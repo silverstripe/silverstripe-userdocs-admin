@@ -55,7 +55,8 @@
     "extra": {
         "expose": [
             "client/dist",
-            "client/images"
+            "client/images",
+            "client/lang"
         ]
     }
 }
