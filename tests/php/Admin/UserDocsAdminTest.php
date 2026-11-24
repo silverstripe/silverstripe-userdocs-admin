@@ -221,6 +221,21 @@ class UserDocsAdminTest extends FunctionalTest
         $this->assertStringNotContainsString('javascript:', $html);
     }
 
+    public function testRenderDocWithMissingDocLink(): void
+    {
+        UserDocsManifest::config()->set('documentation_roots', [
+            'silverstripe/userdocs-admin:tests/php/fixtures/missing_links' => true,
+        ]);
+        UserDocsManifest::singleton()->init();
+        $admin = new UserDocsAdmin();
+
+        $html = $admin->renderDoc('section/page');
+
+        $href = preg_quote($admin->Link('docs/section/other'), '#');
+        $this->assertMatchesRegularExpression('#<a\b[^>]*\bhref="' . $href . '"[^>]*>other page</a>#', $html);
+        $this->assertStringContainsString('and the missing page.', $html);
+    }
+
     public static function provideRenderDocMissingDoc(): array
     {
         return [

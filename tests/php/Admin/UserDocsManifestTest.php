@@ -845,6 +845,42 @@ class UserDocsManifestTest extends SapphireTest
         $this->assertSame($expected, UserDocsManifest::encodeSlug($slug));
     }
 
+    public static function provideGetSlugFromUrlPath(): array
+    {
+        return [
+            'plain path' => [
+                'path' => 'section/page',
+                'expected' => 'section/page',
+            ],
+            'encoded characters' => [
+                'path' => 'section/c%23%20%26%20100%25%3F',
+                'expected' => 'section/c# & 100%?',
+            ],
+            'encoded dots' => [
+                'path' => 'section/release%2Enotes',
+                'expected' => 'section/release.notes',
+            ],
+            'query string' => [
+                'path' => 'section/page?a=b#anchor',
+                'expected' => 'section/page',
+            ],
+            'anchor' => [
+                'path' => 'section/page#anchor?a=b',
+                'expected' => 'section/page',
+            ],
+            'decomposed characters' => [
+                'path' => 'section/' . rawurlencode("e\u{301}te\u{301}"),
+                'expected' => 'section/été',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetSlugFromUrlPath')]
+    public function testGetSlugFromUrlPath(string $path, string $expected): void
+    {
+        $this->assertSame($expected, UserDocsManifest::getSlugFromUrlPath($path));
+    }
+
     public function testGetBreadcrumbsUnknownSlug(): void
     {
         $this->expectException(InvalidArgumentException::class);

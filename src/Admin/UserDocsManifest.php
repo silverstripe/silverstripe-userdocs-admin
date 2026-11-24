@@ -795,6 +795,17 @@ class UserDocsManifest implements Flushable
     }
 
     /**
+     * Get the slug from the path of a doc URL, relative to the URL of the docs action.
+     * This removes any query string or anchor, and decodes the path.
+     */
+    public static function getSlugFromUrlPath(string $path): string
+    {
+        $slug = rawurldecode(substr($path, 0, strcspn($path, '?#')));
+        // Slugs are in the composed (NFC) form, so the URL must be too.
+        return Normalizer::normalize($slug, Normalizer::FORM_C) ?: $slug;
+    }
+
+    /**
      * A root folder without an index.md file only has placeholder data,
      * so it must not replace data for the same root from another locale or module.
      */
