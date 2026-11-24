@@ -1,0 +1,37 @@
+en:
+  SilverStripe\UserDocs\Admin\UserDocsAdmin:
+    BreadcrumbSearchResults: 'Search results'
+    Close: Close
+    DisplayingResults: 'Displaying {first}-{last} of {total} results'
+    DocumentationNavigation: 'Documentation Navigation'
+    FoundIn: 'Found in:'
+    MENUTITLE: 'User docs'
+    NoResults: 'No results found'
+    NoResultsWithSuggestion: 'No results for "{searchterm}". Did you mean {suggestion}?'
+    Pagination: Pagination
+    PaginationFirst: First
+    PaginationInputTitle: 'Current page, currently {current} of {total}. Enter a page number and press Enter to go to that page.'
+    PaginationLast: Last
+    PaginationNext: Next
+    PaginationOf: of
+    PaginationPage: Page
+    PaginationPrevious: Previous
+    SearchResults: 'Documentation Search Results'
+    TreeContents: Contents
+    UserDocumentationNavigation: 'User Documentation Navigation'
+  SilverStripe\UserDocs\Markdown\Breadcrumbs\BreadcrumbRenderer:
+    Breadcrumbs: Breadcrumbs
+  SilverStripe\UserDocs\Markdown\HeadingPermalinkWrapper:
+    ARIA_LABEL: 'Permalink: {heading}'
+  SilverStripe\UserDocs\Markdown\MarkdownEnvironmentFactory:
+    alert_caution: Caution
+    alert_important: Important
+    alert_note: Note
+    alert_tip: Tip
+    alert_warning: Warning
+  SilverStripe\UserDocs\Markdown\TableOfContentsWrapper:
+    heading: 'Quick links'
+  SilverStripe\UserDocs\Search\SearchForm:
+    FilterLabelText: 'Search documentation'
+    SearchTerms: 'Search Terms'
+    Title: Title
