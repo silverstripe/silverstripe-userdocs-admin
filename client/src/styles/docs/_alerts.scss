@@ -1,6 +1,7 @@
 /* Layout for GitHub-style alerts. Colours come from the bootstrap alert classes. */
 .userdocs-content {
-  .alert > :last-child {
+  .alert > :last-child,
+  .alert > .userdocs-extension-content:last-child > :last-child {
     margin-bottom: 0;
   }
 

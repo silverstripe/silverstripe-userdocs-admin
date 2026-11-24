@@ -6,14 +6,19 @@ use League\CommonMark\Environment\EnvironmentBuilderInterface;
 use League\CommonMark\Event\DocumentParsedEvent;
 use League\CommonMark\Extension\CommonMark\Node\Block\Heading;
 use League\CommonMark\Extension\CommonMark\Node\Block\HtmlBlock;
+use League\CommonMark\Extension\CommonMark\Node\Inline\Link;
 use League\CommonMark\Extension\ExtensionInterface;
+use League\CommonMark\Extension\HeadingPermalink\HeadingPermalink;
+use League\CommonMark\Extension\TableOfContents\Node\TableOfContents;
 use League\CommonMark\Node\Block\Document;
+use League\CommonMark\Node\Block\TightBlockInterface;
 use League\CommonMark\Node\Node;
 use League\Config\ConfigurationAwareInterface;
 use League\Config\ConfigurationInterface;
 use Psr\Log\LoggerInterface;
 use SilverStripe\Core\Injector\Injectable;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\i18n\i18n;
 
 /**
  * CommonMark extension which moves content from extension docs to places in the original doc.
@@ -28,6 +33,7 @@ use SilverStripe\Core\Injector\Injector;
  *   the heading with that ID.
  * Content in an extension doc before the first "insert" marker is just appended to the end of the doc.
  * Content for a place that the original doc doesn't have is removed.
+ * Content from an extension doc in a different language than the original doc is put in an ExtensionContentBlock.
  *
  * The content of each extension doc must start with a marker from ExtensionDocMarker::getMarker().
  */
@@ -61,6 +67,11 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
 
     private const TYPE_INSERT_END = 'insert-end';
 
+    /**
+     * Type for content in an extension doc before the first "insert" marker, which stays at the end of the doc
+     */
+    private const TYPE_APPEND = 'append';
+
     private array $docData;
 
     private array $extensionData;
@@ -68,6 +79,11 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
     private bool $logWarnings;
 
     private ?ConfigurationInterface $config = null;
+
+    /**
+     * Chunks that need to go in an ExtensionContentBlock, each with its "lang" and "nodes"
+     */
+    private array $chunksToWrap = [];
 
     /**
      * @param array $docData Metadata for the doc from UserDocsManifest
@@ -92,6 +108,9 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
         // Run after heading IDs are added (priority -100), so headings can be found by their ID.
         // Run before the table of contents is added (priority -150), so it includes the moved content.
         $environment->addEventListener(DocumentParsedEvent::class, [$this, 'onDocumentParsed'], -125);
+        // Run after the table of contents is added (priority -150), so it is never put in an ExtensionContentBlock.
+        $environment->addEventListener(DocumentParsedEvent::class, [$this, 'wrapContent'], -175);
+        $environment->addRenderer(ExtensionContentBlock::class, ExtensionContentRenderer::create());
     }
 
     public function onDocumentParsed(DocumentParsedEvent $event): void
@@ -118,14 +137,14 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
                     $target = $placeholders[$chunk['type']][$chunk['name']] ?? null;
                 }
             }
+            if ($target || $chunk['type'] === ExtensionPointMarkdownExtension::TYPE_APPEND) {
+                $this->moveChunk($chunk, $target);
+                continue;
+            }
+            // The original doc can be replaced by a doc that doesn't have this place.
+            // Content after a marker that can't be used is also removed, because it's not meant for the end.
             foreach ($chunk['nodes'] as $node) {
-                if ($target) {
-                    $target->insertBefore($node);
-                } else {
-                    // The original doc can be replaced by a doc that doesn't have this place.
-                    // Content after a marker that can't be used is also removed, because it's not meant for the end.
-                    $node->detach();
-                }
+                $node->detach();
             }
         }
 
@@ -138,15 +157,68 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
     }
 
     /**
+     * Put content from extension docs in a different language than the original doc in an ExtensionContentBlock,
+     * and give links to its headings in the table of contents the same language.
+     */
+    public function wrapContent(DocumentParsedEvent $event): void
+    {
+        if (empty($this->chunksToWrap)) {
+            return;
+        }
+        foreach ($this->chunksToWrap as $chunk) {
+            $this->wrapChunk($chunk);
+        }
+        $this->chunksToWrap = [];
+        $this->addLangToTableOfContents($event->getDocument());
+    }
+
+    /**
+     * Give each link in the table of contents the language of the heading it links to,
+     * if that heading is in an ExtensionContentBlock.
+     */
+    private function addLangToTableOfContents(Document $document): void
+    {
+        $fragmentPrefix = $this->getFragmentPrefix();
+        $langByUrl = [];
+        foreach ($document->iterator() as $node) {
+            if (!($node instanceof ExtensionContentBlock)) {
+                continue;
+            }
+            foreach ($node->iterator() as $child) {
+                if ($child instanceof HeadingPermalink) {
+                    $langByUrl['#' . $fragmentPrefix . $child->getSlug()] = $node->getLang();
+                }
+            }
+        }
+        if (empty($langByUrl)) {
+            return;
+        }
+        foreach ($document->iterator() as $node) {
+            if (!($node instanceof TableOfContents)) {
+                continue;
+            }
+            foreach ($node->iterator() as $child) {
+                if ($child instanceof Link && isset($langByUrl[$child->getUrl()])) {
+                    $child->data->set('attributes/lang', $langByUrl[$child->getUrl()]);
+                }
+            }
+        }
+    }
+
+    /**
      * Split the top-level nodes of the document into the content of each doc.
      * The first section is the main doc, and each other section is an extension doc.
      *
-     * @return array[] Each section has a "filePath" and the "nodes" in it
+     * @return array[] Each section has a "filePath", the "lang" of its content, and the "nodes" in it
      */
     private function getSections(Document $document): array
     {
         $sections = [];
-        $current = ['filePath' => $this->docData['filePath'] ?? null, 'nodes' => []];
+        $current = [
+            'filePath' => $this->docData['filePath'] ?? null,
+            'lang' => $this->getLang($this->docData),
+            'nodes' => [],
+        ];
         foreach ($document->children() as $node) {
             $extensionIndex = ExtensionDocMarker::getIndex($node);
             if ($extensionIndex === null) {
@@ -154,7 +226,12 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
                 continue;
             }
             $sections[] = $current;
-            $current = ['filePath' => $this->extensionData[$extensionIndex]['filePath'] ?? null, 'nodes' => []];
+            $extensionDocData = $this->extensionData[$extensionIndex] ?? [];
+            $current = [
+                'filePath' => $extensionDocData['filePath'] ?? null,
+                'lang' => $this->getLang($extensionDocData),
+                'nodes' => [],
+            ];
         }
         $sections[] = $current;
         return $sections;
@@ -335,43 +412,126 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
 
     /**
      * Get the content in an extension doc for each place it is inserted at.
-     * Content before the first "insert" marker isn't included, so it stays where it is.
+     * Content before the first "insert" marker has the "append" type, because it stays where it is.
      * Content after a marker that can't be used has a null name.
      *
      * @return array[] Each chunk has the marker "type", the "name" of the extension point or heading ID,
-     * and the top-level "nodes" for it
+     * the "lang" of the extension doc, and the top-level "nodes" for it
      */
     private function getChunks(array $section): array
     {
         $chunks = [];
-        $current = null;
+        $current = [
+            'type' => ExtensionPointMarkdownExtension::TYPE_APPEND,
+            'name' => null,
+            'lang' => $section['lang'],
+            'nodes' => [],
+        ];
         foreach ($section['nodes'] as $topLevelNode) {
             $marker = $this->matchMarker($topLevelNode);
             if ($marker && $marker['type'] !== ExtensionPointMarkdownExtension::TYPE_EXTENSION_POINT) {
-                if ($current) {
-                    $chunks[] = $current;
-                }
+                $chunks[] = $current;
                 $current = [
                     'type' => $marker['type'],
                     'name' => $this->getTargetName($marker, $section),
+                    'lang' => $section['lang'],
                     'nodes' => [],
                 ];
                 continue;
             }
             if ($this->hasNestedInsertMarker($topLevelNode, $section)) {
-                if ($current) {
-                    $chunks[] = $current;
-                }
-                $current = ['type' => null, 'name' => null, 'nodes' => []];
+                $chunks[] = $current;
+                $current = ['type' => null, 'name' => null, 'lang' => $section['lang'], 'nodes' => []];
             }
-            if ($current) {
-                $current['nodes'][] = $topLevelNode;
-            }
+            $current['nodes'][] = $topLevelNode;
         }
-        if ($current) {
-            $chunks[] = $current;
-        }
+        $chunks[] = $current;
         return $chunks;
+    }
+
+    /**
+     * Move the nodes in a chunk to just before the target node.
+     * If there is no target, the nodes stay where they are.
+     * If the chunk is in a different language than the original doc, it is kept for wrapContent().
+     */
+    private function moveChunk(array $chunk, ?Node $target): void
+    {
+        $nodes = $chunk['nodes'];
+        if (empty($nodes)) {
+            return;
+        }
+        if ($target) {
+            foreach ($nodes as $node) {
+                $target->insertBefore($node);
+            }
+        }
+        $lang = $chunk['lang'];
+        if ($lang !== null && $lang !== $this->getLang($this->docData)) {
+            $this->chunksToWrap[] = ['lang' => $lang, 'nodes' => $nodes];
+        }
+    }
+
+    /**
+     * Put the nodes of a chunk in an ExtensionContentBlock.
+     * Other content such as the table of contents can be added between the nodes after they are moved.
+     * The nodes on each side of that content go in separate blocks, so the other content isn't in the block.
+     */
+    private function wrapChunk(array $chunk): void
+    {
+        $wrapper = null;
+        foreach ($chunk['nodes'] as $node) {
+            // Nodes such as markers can be removed after they are moved
+            if (!$node->parent()) {
+                continue;
+            }
+            // The previous nodes are in the current wrapper, so a node directly after it goes in it too
+            if (!$wrapper || $node->previous() !== $wrapper) {
+                $wrapper = new ExtensionContentBlock($chunk['lang']);
+                $node->insertBefore($wrapper);
+                $wrapper->setTight($this->isInTightBlock($wrapper));
+            }
+            $wrapper->appendChild($node);
+        }
+    }
+
+    /**
+     * Check if paragraphs directly in this node would be rendered without a p element.
+     * Uses the same rules as the CommonMark ParagraphRenderer.
+     */
+    private function isInTightBlock(Node $node): bool
+    {
+        $parent = $node->parent();
+        for ($i = 0; $parent && $i < 2; $i++) {
+            if ($parent instanceof TightBlockInterface) {
+                return $parent->isTight();
+            }
+            $parent = $parent->parent();
+        }
+        return false;
+    }
+
+    /**
+     * Get the value for the HTML lang attribute from the metadata of a doc, or null if it has no locale.
+     */
+    private function getLang(array $docData): ?string
+    {
+        $locale = $docData['locale'] ?? null;
+        if (!is_string($locale) || $locale === '') {
+            return null;
+        }
+        return i18n::convert_rfc1766($locale);
+    }
+
+    /**
+     * Get the prefix that the HeadingPermalinkExtension adds to fragments in links, including the "-" separator.
+     */
+    private function getFragmentPrefix(): string
+    {
+        if (!$this->config || !$this->config->exists('heading_permalink/fragment_prefix')) {
+            return '';
+        }
+        $fragmentPrefix = (string) $this->config->get('heading_permalink/fragment_prefix');
+        return $fragmentPrefix === '' ? '' : "$fragmentPrefix-";
     }
 
     /**
