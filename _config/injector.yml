@@ -36,6 +36,10 @@ SilverStripe\Core\Injector\Injector:
             caution: 'danger'
           icons:
             active: true
+        slug_normalizer:
+          # The ID of the related docs heading. Headings with the same text get a different ID.
+          reserved:
+            - 'related-docs'
         heading_permalink:
           apply_id_to_heading: true
           aria_hidden: false

@@ -36,6 +36,8 @@ Assuming Module two has the higher priority, the documentation navigation tree w
 
 Note that the documentation from module two for "Navigation menus" completely overrides the docs from module one for the same file - but where they both provide separate docs, the docs seamlessly merge together into the tree.
 
+Frontmatter keys that your override leaves out keep the values from the file it replaces, except for `title` and `extends`. Values never come from a translation in a locale that your override is a fallback for. For example, an English override doesn't get values from a French translation of the page. To change a value, set the key in your override. See [frontmatter metadata](./writing_documentation#frontmatter-metadata).
+
 Images aren't shared between modules. If your override uses an image from the documentation it replaces, copy the image into your own documentation root (see [images in docs](./writing_documentation#images-in-docs)).
 
 > [!TIP]

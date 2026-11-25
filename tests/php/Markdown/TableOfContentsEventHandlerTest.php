@@ -5,11 +5,14 @@ namespace SilverStripe\UserDocs\Tests\Markdown;
 use League\CommonMark\Environment\Environment;
 use League\CommonMark\Event\DocumentParsedEvent;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
+use League\CommonMark\Extension\CommonMark\Node\Block\Heading;
 use League\CommonMark\Extension\HeadingPermalink\HeadingPermalinkExtension;
 use League\CommonMark\Extension\TableOfContents\TableOfContentsExtension;
 use League\CommonMark\MarkdownConverter;
+use League\CommonMark\Node\Inline\Text;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SilverStripe\Dev\SapphireTest;
+use SilverStripe\UserDocs\Markdown\RelatedDocsExtension;
 use SilverStripe\UserDocs\Markdown\TableOfContentsEventHandler;
 
 class TableOfContentsEventHandlerTest extends SapphireTest
@@ -75,11 +78,47 @@ class TableOfContentsEventHandlerTest extends SapphireTest
         $this->assertSame($expected, $this->convertToBlockOrder($markdown, $position, $minLevel, $maxLevel));
     }
 
+    public static function provideOnDocumentParsedWithRelatedDocsHeading(): array
+    {
+        return [
+            'the related docs heading is never used for the placeholder' => [
+                'markdown' => "# Title\n\nIntro\n\n> ## Quoted",
+                'expected' => ['h1', 'toc', 'p', 'blockquote', 'h2', 'h2'],
+            ],
+            'no placeholder if the related docs heading is the only heading in the table of contents' => [
+                'markdown' => "# Title\n\nIntro",
+                'expected' => ['h1', 'p', 'h2'],
+            ],
+        ];
+    }
+
+    #[DataProvider('provideOnDocumentParsedWithRelatedDocsHeading')]
+    public function testOnDocumentParsedWithRelatedDocsHeading(string $markdown, array $expected): void
+    {
+        $addRelatedDocsHeading = function (DocumentParsedEvent $event): void {
+            $heading = new Heading(2);
+            $heading->data->set(RelatedDocsExtension::NODE_DATA_KEY, true);
+            $heading->appendChild(new Text('Related docs'));
+            $event->getDocument()->appendChild($heading);
+        };
+
+        $blockOrder = $this->convertToBlockOrder($markdown, 'placeholder', 2, 6, $addRelatedDocsHeading);
+
+        $this->assertSame($expected, $blockOrder);
+    }
+
     /**
      * Convert markdown and return the top-level blocks in order, with the table of contents as "toc"
+     *
+     * @param callable|null $beforeHandler A listener that runs before the handler
      */
-    private function convertToBlockOrder(string $markdown, string $position, int $minLevel, int $maxLevel): array
-    {
+    private function convertToBlockOrder(
+        string $markdown,
+        string $position,
+        int $minLevel,
+        int $maxLevel,
+        ?callable $beforeHandler = null
+    ): array {
         $environment = new Environment([
             'table_of_contents' => [
                 'position' => $position,
@@ -91,6 +130,9 @@ class TableOfContentsEventHandlerTest extends SapphireTest
         $environment->addExtension(new CommonMarkCoreExtension());
         $environment->addExtension(new HeadingPermalinkExtension());
         $environment->addExtension(new TableOfContentsExtension());
+        if ($beforeHandler) {
+            $environment->addEventListener(DocumentParsedEvent::class, $beforeHandler, 10);
+        }
         $environment->addEventListener(
             DocumentParsedEvent::class,
             [new TableOfContentsEventHandler(), 'onDocumentParsed']

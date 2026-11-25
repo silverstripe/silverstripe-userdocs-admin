@@ -24,6 +24,7 @@ use SilverStripe\ORM\FieldType\DBHTMLText;
 use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
 use SilverStripe\UserDocs\Markdown\Breadcrumbs\BreadcrumbsExtension;
 use SilverStripe\UserDocs\Markdown\ExtensionDocAssembler;
+use SilverStripe\UserDocs\Markdown\RelatedDocsExtension;
 use SilverStripe\UserDocs\Search\SearchForm;
 use SilverStripe\UserDocs\Search\SearchIndex;
 
@@ -177,6 +178,7 @@ class UserDocsAdmin extends LeftAndMain
             $assembler->getExtensionData($docData)
         ));
         $environment->addExtension(BreadcrumbsExtension::create($this->getBreadcrumbsForSlug($slug)));
+        $environment->addExtension(RelatedDocsExtension::create($docData));
         $assembler->addToEnvironment($environment, $docData);
         $markdown = $assembler->getMarkdown($docData);
         $html = $converter->convert($markdown);
