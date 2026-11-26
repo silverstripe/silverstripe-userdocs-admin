@@ -149,6 +149,8 @@ To link to a page that has child pages, link to the `index.md` file in its folde
 
 Links are made from the file names, which are the same in all locales, so a link goes to the translated version of the page if there is one.
 
+If the linked page doesn't exist, the link text shows as plain text. This lets you link to documentation from modules that are often installed with yours, but aren't required by it. A link to a missing heading in a page that exists is still a link to that page.
+
 Links that start with a protocol such as `http://` or `https://` aren't changed.
 
 ## Images in docs

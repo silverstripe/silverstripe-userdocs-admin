@@ -3,8 +3,8 @@
 namespace SilverStripe\UserDocs\Admin;
 
 use BadMethodCallException;
+use League\CommonMark\Event\DocumentParsedEvent;
 use League\CommonMark\MarkdownConverter;
-use Normalizer;
 use Override;
 use SilverStripe\Admin\LeftAndMain;
 use SilverStripe\Control\Controller;
@@ -25,6 +25,7 @@ use SilverStripe\UserDocs\Markdown\BaseUrlMarkdownExtension;
 use SilverStripe\UserDocs\Markdown\Breadcrumbs\BreadcrumbsExtension;
 use SilverStripe\UserDocs\Markdown\ExtensionDocAssembler;
 use SilverStripe\UserDocs\Markdown\RelatedDocsExtension;
+use SilverStripe\UserDocs\Markdown\MissingDocLinkEventHandler;
 use SilverStripe\UserDocs\Search\SearchForm;
 use SilverStripe\UserDocs\Search\SearchIndex;
 
@@ -102,9 +103,7 @@ class UserDocsAdmin extends LeftAndMain
         $remaining = $request->remaining();
         $request->shift(substr_count($remaining, '/') + 1);
         // The URL isn't decoded for us, and slugs can contain characters that needed to be encoded.
-        $slug = rawurldecode($remaining);
-        // Slugs are in the composed (NFC) form, so the URL must be too.
-        $this->currentDocSlug = Normalizer::normalize($slug, Normalizer::FORM_C) ?: $slug;
+        $this->currentDocSlug = UserDocsManifest::getSlugFromUrlPath($remaining);
         return $this->getResponseNegotiator()->respond($request);
     }
 
@@ -177,6 +176,13 @@ class UserDocsAdmin extends LeftAndMain
             $this->Link('image'),
             $assembler->getExtensionData($docData)
         ));
+        // Run after the links have the URLs of the docs (priority 0),
+        // and before the table of contents copies the headings (priority -150)
+        $environment->addEventListener(
+            DocumentParsedEvent::class,
+            [MissingDocLinkEventHandler::create($this->Link('docs')), 'onDocumentParsed'],
+            -100
+        );
         $environment->addExtension(BreadcrumbsExtension::create($this->getBreadcrumbsForSlug($slug)));
         $environment->addExtension(RelatedDocsExtension::create($docData));
         $assembler->addToEnvironment($environment, $docData);
