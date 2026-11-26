@@ -29,6 +29,8 @@ en:
     alert_note: Note
     alert_tip: Tip
     alert_warning: Warning
+  SilverStripe\UserDocs\Markdown\RelatedDocsExtension:
+    HEADING: 'Related docs'
   SilverStripe\UserDocs\Markdown\TableOfContentsWrapper:
     heading: 'Quick links'
   SilverStripe\UserDocs\Search\SearchForm:

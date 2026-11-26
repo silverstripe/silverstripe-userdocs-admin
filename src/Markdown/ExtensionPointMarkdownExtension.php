@@ -42,6 +42,12 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
     use Injectable;
 
     /**
+     * A key in the data of a top-level node that isn't content from the original doc or an extension doc.
+     * Nodes with this key are never moved, removed or wrapped.
+     */
+    public const NOT_DOC_CONTENT_DATA_KEY = 'userdocs_not_doc_content';
+
+    /**
      * Matches an HTML comment that is an extension point or "insert" marker
      */
     private const MARKER_PATTERN
@@ -220,6 +226,9 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
             'nodes' => [],
         ];
         foreach ($document->children() as $node) {
+            if ($node->data->has(ExtensionPointMarkdownExtension::NOT_DOC_CONTENT_DATA_KEY)) {
+                continue;
+            }
             $extensionIndex = ExtensionDocMarker::getIndex($node);
             if ($extensionIndex === null) {
                 $current['nodes'][] = $node;
@@ -385,7 +394,8 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
 
     /**
      * Get the node that comes directly after the section that starts with the heading.
-     * The section ends at the next heading of the same or higher level, or where the extension docs start.
+     * The section ends at the next heading of the same or higher level, where the extension docs start,
+     * or at content that isn't part of any doc.
      * Returns null if the section goes to the end of the heading's parent.
      */
     private function getSectionEnd(Heading $heading): ?Node
@@ -395,7 +405,10 @@ class ExtensionPointMarkdownExtension implements ExtensionInterface, Configurati
             if ($node instanceof Heading && $node->getLevel() <= $heading->getLevel()) {
                 return $node;
             }
-            if (ExtensionDocMarker::getIndex($node) !== null) {
+            if (
+                ExtensionDocMarker::getIndex($node) !== null
+                || $node->data->has(ExtensionPointMarkdownExtension::NOT_DOC_CONTENT_DATA_KEY)
+            ) {
                 return $node;
             }
             $node = $node->next();

@@ -30,6 +30,12 @@ For example, if your project overrides `en/00_global_features/index.md` from mod
 
 If a module only has a page in locales that aren't in the fallback order, the next module with that page is checked. For example, a German-only page in your project doesn't hide the English page from module one for English users.
 
+## Frontmatter
+
+A translation doesn't need to repeat the frontmatter of the page it translates. If the translation leaves out a key, the value comes from the next file for that page in the [fallback order](#fallback-order), even if that file is in another module. For example, a French translation that only has a `title` still has the `classes` of the English page. To change a value, set the key in the translation. To remove a value, set the key to an empty value such as `[]` or `false`.
+
+The `title` and `extends` keys are never filled in from another file. See [frontmatter metadata](./writing_documentation#frontmatter-metadata).
+
 ## Images
 
 Translated documentation doesn't need its own copy of every image. Images are looked up in the same locale folders as the documentation itself, in the same [fallback order](#fallback-order).

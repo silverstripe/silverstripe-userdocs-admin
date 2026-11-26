@@ -16,6 +16,10 @@ use SilverStripe\Core\Path;
 use SilverStripe\Dev\SapphireTest;
 use SilverStripe\i18n\i18n;
 use SilverStripe\UserDocs\Admin\UserDocsManifest;
+use SilverStripe\UserDocs\Tests\DocClasses\BaseRecord;
+use SilverStripe\UserDocs\Tests\DocClasses\ChildRecord;
+use SilverStripe\UserDocs\Tests\DocClasses\OtherRecord;
+use SilverStripe\UserDocs\Tests\DocClasses\ParentRecord;
 use SilverStripe\UserDocs\Tests\ExtensionModulesTrait;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Psr16Cache;
@@ -1392,6 +1396,117 @@ class UserDocsManifestTest extends SapphireTest
         $this->assertSame([], $this->getRawDocData($manifest));
     }
 
+    public static function provideGetLocalisedDocDataInheritsFrontMatter(): array
+    {
+        $parentRecord = ParentRecord::class;
+        $otherRecord = OtherRecord::class;
+        return [
+            'translation without the key uses the original' => [
+                'slug' => 'section/missing_key',
+                'expected' => ['title' => 'Clé manquante', 'classes' => $parentRecord, 'custom' => 'low'],
+            ],
+            'translation with an empty value keeps it' => [
+                'slug' => 'section/empty_value',
+                'expected' => ['classes' => []],
+            ],
+            'translation with different classes keeps them' => [
+                'slug' => 'section/different_classes',
+                'expected' => ['classes' => $otherRecord],
+            ],
+            'translation from another module uses the original' => [
+                'slug' => 'section/cross_module',
+                'expected' => ['title' => 'Autre module', 'classes' => $parentRecord],
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetLocalisedDocDataInheritsFrontMatter')]
+    public function testGetLocalisedDocDataInheritsFrontMatter(string $slug, array $expected): void
+    {
+        i18n::set_locale('fr_FR');
+
+        $docData = $this->regenerateForModules(['module_high', 'module_low'], 'frontmatter_inheritance')
+            ->getLocalisedDocData();
+
+        $this->assertSame('fr', $docData[$slug]['locale']);
+        $this->assertSame($expected, $docData[$slug]['frontMatter']);
+    }
+
+    public function testGetLocalisedDocDataInheritsFrontMatterFromOverriddenDoc(): void
+    {
+        $docDatum = $this->regenerateForModules(['module_high', 'module_low'], 'frontmatter_inheritance')
+            ->getLocalisedDocData()['section/override'];
+
+        $this->assertSame('test/frontmatter-high', $docDatum['module']);
+        // The title and "extends" only apply to the file they're in
+        $this->assertSame(['classes' => ParentRecord::class], $docDatum['frontMatter']);
+        $this->assertSame('Override', $docDatum['title']);
+    }
+
+    public function testGetLocalisedDocDataDoesNotInheritFrontMatterFromEarlierLocale(): void
+    {
+        i18n::set_locale('fr_FR');
+
+        $docDatum = $this->regenerateForModules(['module_high', 'module_low'], 'frontmatter_inheritance')
+            ->getLocalisedDocData()['section/override_of_translated'];
+
+        // The English override replaces the English original, not the French translation
+        $this->assertSame('test/frontmatter-high', $docDatum['module']);
+        $this->assertSame(['classes' => ParentRecord::class], $docDatum['frontMatter']);
+    }
+
+    public static function provideGetDocClassesWithExtension(): array
+    {
+        return [
+            'extension adds classes' => [
+                'locale' => 'en_US',
+            ],
+            'translated extension without classes uses its original' => [
+                'locale' => 'fr_FR',
+            ],
+        ];
+    }
+
+    #[DataProvider('provideGetDocClassesWithExtension')]
+    public function testGetDocClassesWithExtension(string $locale): void
+    {
+        i18n::set_locale($locale);
+        $manifest = $this->regenerateForModules(['module_high', 'module_low'], 'frontmatter_inheritance');
+
+        $classes = $manifest->getDocClasses($manifest->getLocalisedDocData()['section/extended']);
+
+        $this->assertSame(
+            [
+                strtolower(ParentRecord::class) => ParentRecord::class,
+                strtolower(OtherRecord::class) => OtherRecord::class,
+            ],
+            $classes
+        );
+    }
+
+    public function testGetLocalisedClassMap(): void
+    {
+        $manifest = new UserDocsManifest();
+        $manifest->regenerate([$this->fixturePath('class_map')], true);
+
+        $classMap = $manifest->getLocalisedClassMap();
+
+        ksort($classMap);
+        $this->assertSame(
+            [
+                strtolower(BaseRecord::class) => ['records'],
+                // Docs are in the order of the navigation tree, so docs in a folder come before the next doc.
+                // The class name in the frontmatter of "records/child" has a different case and a leading backslash.
+                strtolower(ChildRecord::class) => ['records/folder/deep', 'records/child'],
+                // The doc without content isn't included
+                strtolower(OtherRecord::class) => ['records/parent'],
+                // The doc that is primary for the class comes first
+                strtolower(ParentRecord::class) => ['records/primary', 'records/parent'],
+            ],
+            $classMap
+        );
+    }
+
     /**
      * Get the doc data the manifest stores, keyed by module, then locale, then slug.
      */
@@ -1429,16 +1544,17 @@ class UserDocsManifestTest extends SapphireTest
     }
 
     /**
-     * Build a manifest from the docs of the given module_override fixture modules.
+     * Build a manifest from the docs of the given fixture modules.
      *
      * @param string[] $modules Module directory names, from highest to lowest priority
+     * @param string $fixture The fixture folder that has the module directories
      */
-    private function regenerateForModules(array $modules): UserDocsManifest
+    private function regenerateForModules(array $modules, string $fixture = 'module_override'): UserDocsManifest
     {
         $moduleManifest = new ModuleManifest(BASE_PATH);
         $docRoots = [];
         foreach ($modules as $module) {
-            $modulePath = $this->fixturePath("module_override/$module");
+            $modulePath = $this->fixturePath("$fixture/$module");
             $moduleManifest->addModule($modulePath);
             $docRoots[] = Path::join($modulePath, 'docs');
         }

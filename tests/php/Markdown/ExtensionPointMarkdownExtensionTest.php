@@ -9,6 +9,8 @@ use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
 use League\CommonMark\Extension\HeadingPermalink\HeadingPermalinkExtension;
 use League\CommonMark\Extension\TableOfContents\TableOfContentsExtension;
 use League\CommonMark\MarkdownConverter;
+use League\CommonMark\Node\Block\Paragraph;
+use League\CommonMark\Node\Inline\Text;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
 use SilverStripe\Core\Injector\Injector;
@@ -441,6 +443,29 @@ class ExtensionPointMarkdownExtensionTest extends SapphireTest
         $this->assertSame(2, substr_count($html, '<div class="userdocs-extension-content" lang="fr">'));
     }
 
+    public function testOnDocumentParsedNotDocContent(): void
+    {
+        $addNotDocContent = function (DocumentParsedEvent $event): void {
+            $paragraph = new Paragraph();
+            $paragraph->appendChild(new Text('Not doc content'));
+            $paragraph->data->set(ExtensionPointMarkdownExtension::NOT_DOC_CONTENT_DATA_KEY, true);
+            $event->getDocument()->appendChild($paragraph);
+        };
+
+        $html = $this->convert(
+            ExtensionPointMarkdownExtensionTest::ORIGINAL . "\n\n## A\n\nA text",
+            ["<!-- userdocs-insert-at: middle -->\n\nInserted\n\n<!-- userdocs-insert-end: #a -->\n\nEnd of A"],
+            beforeExtension: $addNotDocContent
+        );
+
+        // The content after the extension's marker isn't moved with the extension's content
+        $this->assertSame(
+            "<p>Before</p>\n<p>Inserted</p>\n<p>After</p>\n" . ExtensionPointMarkdownExtensionTest::HEADINGS_HTML_A
+            . "\n<p>End of A</p>\n<p>Not doc content</p>",
+            trim($html)
+        );
+    }
+
     /**
      * Convert the original markdown with the content of each extension appended, as UserDocsAdmin does.
      *
@@ -454,7 +479,8 @@ class ExtensionPointMarkdownExtensionTest extends SapphireTest
         bool $logWarnings = true,
         ?string $docLocale = null,
         array $extensionLocales = [],
-        bool $hasTableOfContents = false
+        bool $hasTableOfContents = false,
+        ?callable $beforeExtension = null
     ): string {
         $markdown = $original;
         $extensionData = [];
@@ -500,6 +526,9 @@ class ExtensionPointMarkdownExtensionTest extends SapphireTest
                 [TableOfContentsEventHandler::create(), 'onDocumentParsed'],
                 -140
             );
+        }
+        if ($beforeExtension) {
+            $environment->addEventListener(DocumentParsedEvent::class, $beforeExtension);
         }
         $environment->addExtension(ExtensionPointMarkdownExtension::create($docData, $extensionData, $logWarnings));
         // Section markers aren't removed by the extension, so remove them as UserDocsAdmin does

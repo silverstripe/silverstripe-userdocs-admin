@@ -76,6 +76,54 @@ You can include any information you want in the frontmatter, but the only inform
 
 - `title`: (string) The navigation tree title for the page (see [navigation tree titles](#navigation-tree-titles))
 - `extends`: (`true` or a module name) If set, the content from this file is appended to the content from the original instead of replacing it. A module name replaces, removes or translates that module's extension (see [extending documentation](./extending_documentation))
+- `classes`: (class name or list of class names) The classes that the page documents (see [docs for classes](#docs-for-classes))
+- `primary_for`: (class name or list of class names) The classes that this page is the main page for (see [main page for a class](#main-page-for-a-class))
+- `related_docs`: (boolean) Set to `false` to leave out the [related docs](#related-docs) links. Other values have no effect.
+
+A translation or an [override](./overriding_documentation) of a page can leave out frontmatter keys. Those keys get their values from the file that the translation or override replaces, in the same order that content falls back in (see [localising documentation](./localising_documentation#frontmatter)). This doesn't apply to `title` and `extends`, which only apply to the file they're in. If the translation or override sets a key, its own value is used, even if that value is empty, such as `[]` or `false`.
+
+## Docs for classes
+
+A page can name the classes it documents with the `classes` key in its frontmatter. This is used to link [related docs](#related-docs). The value can be one class name or a list of them, so a page can document classes that aren't related to each other:
+
+```yml
+---
+classes:
+  - 'App\Model\AccordionBlock'
+  - 'App\Model\AccordionItem'
+---
+```
+
+Use the fully qualified class name in single quotes. Don't use double quotes, because a backslash in double quotes starts an escape sequence in YAML.
+
+A page can name a class from a module that isn't installed. That class name is ignored until the module is installed.
+
+Any module can name any class, including classes from other modules. For example, your project can name `SilverStripe\CMS\Model\SiteTree` in a page about how pages work on your site. To add a class to a page from another module without replacing it, use an [extension](./extending_documentation#extending-pages) that has `classes` in its frontmatter. The classes from extensions are added to the classes of the page, so an extension can't remove a class.
+
+### Main page for a class
+
+More than one page can name the same class. One of them is the main page for that class. To choose the main page, add the class to the `primary_for` key of that page as well:
+
+```yml
+---
+classes: 'App\Model\Product'
+primary_for: 'App\Model\Product'
+---
+```
+
+A class in `primary_for` only has an effect if the page also names it in `classes`. If no page has the class in `primary_for`, the first page in the navigation tree that names the class is the main page. If more than one page has it, the first of those pages in the navigation tree is the main page.
+
+## Related docs
+
+A "Related docs" heading and a list of links are added to the end of each page. The list has links to:
+
+- For each class that the page names, the [main page](#main-page-for-a-class) for the nearest ancestor class that a page names. For example, if a page names `App\PageTypes\NewsPage` and no page names its parent class `Page`, the link goes to the main page for `SiteTree`.
+- The child pages of the page.
+- Other pages that name one of the same classes, except pages that contain this page or are inside it in the navigation tree. Main pages come first.
+
+If there are no related docs, the heading isn't added. To leave out the related docs for a page, set `related_docs: false` in its frontmatter.
+
+The related docs aren't part of the page content, so extensions can't add content near the heading (see [adding content near a heading](./extending_documentation#heading-inserts)). Content appended by an extension comes before the related docs.
 
 ## Links between docs
 
@@ -125,7 +173,7 @@ A table of contents is generated from the `h2` and lower headings, and is added 
 
 Only put a short intro between the `h1` and the first `h2`. Any other content in that space comes before the table of contents, so users can miss the headings below it.
 
-If a page has no `h2` or lower headings, no table of contents is added.
+If a page has no `h2` or lower headings, no table of contents is added. The [related docs](#related-docs) heading is in the table of contents, but it doesn't cause a table of contents to be added by itself.
 
 ### Markdown extensions and configuration
 

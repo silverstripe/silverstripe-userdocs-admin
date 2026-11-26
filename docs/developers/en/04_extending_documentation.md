@@ -15,6 +15,8 @@ If there is no original file for the page, its extensions aren't shown.
 
 > [!TIP]
 > Other frontmatter metadata in the file will still take effect. For example if you include a title in the frontmatter for your extension page, and the extension comes after the original page, that title will be used instead of the title from the original file. This doesn't happen if the extension falls back to a locale that comes later in the [fallback order](./localising_documentation#fallback-order) than the original page, so an untranslated extension doesn't replace a translated title. To change only the title of a page, use an extension that has a title in its frontmatter and no other content.
+>
+> The `classes` in the frontmatter of an extension are added to the classes of the page it extends (see [docs for classes](./writing_documentation#docs-for-classes)). An extension that has `classes` in its frontmatter and no other content adds classes to the page without changing it.
 
 ## Adding content partway through a page {#extension-points}
 

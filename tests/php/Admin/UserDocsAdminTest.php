@@ -183,6 +183,20 @@ class UserDocsAdminTest extends FunctionalTest
         $this->assertStringContainsString('<h1 id="userdocs-second-page">Second page', $secondPage);
     }
 
+    public function testRenderDocWithRelatedDocs(): void
+    {
+        UserDocsManifest::config()->set('documentation_roots', [
+            'silverstripe/userdocs-admin:tests/php/fixtures/related_docs' => true,
+        ]);
+        UserDocsManifest::singleton()->init();
+
+        $html = (new UserDocsAdmin())->renderDoc('pages');
+
+        // The links go to the docs in the CMS
+        $this->assertStringContainsString('<h2 id="userdocs-related-docs">', $html);
+        $this->assertStringContainsString('<a href="admin/user-docs/docs/pages/generic">Generic</a>', $html);
+    }
+
     public function testRenderDocHeadingPermalink(): void
     {
         UserDocsManifest::singleton()->init();

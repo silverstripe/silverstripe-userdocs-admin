@@ -7,6 +7,7 @@ use InvalidArgumentException;
 use Normalizer;
 use Psr\SimpleCache\CacheInterface;
 use SilverStripe\Control\Controller;
+use SilverStripe\Core\ClassInfo;
 use SilverStripe\Core\Manifest\ManifestFileFinder;
 use League\CommonMark\Extension\FrontMatter\Data\SymfonyYamlFrontMatterParser;
 use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
@@ -48,6 +49,12 @@ class UserDocsManifest implements Flushable
     private const MODULE_NAME_PATTERN = '#^[a-z0-9]([_.-]?[a-z0-9]+)*/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$#';
 
     /**
+     * Frontmatter keys that only apply to the file they're in, so they're never filled in from another file.
+     * The title has its own fallback, and "extends" decides if a file is a doc or an extension.
+     */
+    private const UNINHERITED_FRONT_MATTER_KEYS = ['title', 'extends'];
+
+    /**
      * Paths to directories that contain user documentation.
      *
      * The key is the path and the value is a boolean which sets if the path is included.
@@ -83,6 +90,12 @@ class UserDocsManifest implements Flushable
      * See getDocData().
      */
     private ?array $docDataByLocale = null;
+
+    /**
+     * Slugs of the docs for each class, keyed by the list of locales it was resolved for.
+     * See getLocalisedClassMap().
+     */
+    private array $localisedClassMap = [];
 
     /**
      * Collators used to sort docs, keyed by locale and whether they compare numbers by value.
@@ -596,6 +609,9 @@ class UserDocsManifest implements Flushable
      *
      * Extensions are kept separately for each doc, keyed by their extension key. Each extension key uses the same
      * rules as docs, and falls back separately from the doc it extends.
+     *
+     * Frontmatter keys that a doc doesn't have are filled in from the docs it overrides or translates,
+     * except for keys in UNINHERITED_FRONT_MATTER_KEYS. See inheritFrontMatter().
      */
     public function getLocalisedDocData(): array
     {
@@ -604,24 +620,15 @@ class UserDocsManifest implements Flushable
         if (isset($this->localisedDocData[$key])) {
             return $this->localisedDocData[$key];
         }
+        [$pageFiles, $extensionFiles] = $this->getDocFiles($locales);
         $pages = [];
+        foreach ($pageFiles as $slug => $files) {
+            $pages[$slug] = $this->chooseDoc($files, $locales);
+        }
         $extensions = [];
-        foreach ($this->docData as $moduleData) {
-            foreach ($locales as $locale) {
-                foreach ($moduleData[$locale] ?? [] as $slug => $docDatum) {
-                    if ($docDatum['isExtension']) {
-                        $extensions[$slug][$docDatum['extensionKey']] ??= $docDatum;
-                        continue;
-                    }
-                    // A doc from a higher priority module or locale wins,
-                    // unless it's only a placeholder for a root folder without an index.md file
-                    if (
-                        !isset($pages[$slug])
-                        || ($this->isRootWithoutIndex($pages[$slug]) && !$this->isRootWithoutIndex($docDatum))
-                    ) {
-                        $pages[$slug] = $docDatum;
-                    }
-                }
+        foreach ($extensionFiles as $slug => $filesByKey) {
+            foreach ($filesByKey as $extensionKey => $files) {
+                $extensions[$slug][$extensionKey] = $this->chooseDoc($files, $locales);
             }
         }
         $result = [];
@@ -681,6 +688,64 @@ class UserDocsManifest implements Flushable
     }
 
     /**
+     * Get the slugs of the docs that name each class in their frontmatter, for the current locale.
+     * Only docs with content are included.
+     *
+     * Docs that have the class in "primary_for" come first, and then docs are in the order of the navigation tree.
+     * The first doc for a class is its main doc.
+     *
+     * @return array Lists of slugs keyed by lowercase class name
+     */
+    public function getLocalisedClassMap(): array
+    {
+        $key = implode(',', static::getLocalePriority());
+        if (isset($this->localisedClassMap[$key])) {
+            return $this->localisedClassMap[$key];
+        }
+        $docData = $this->getLocalisedDocData();
+        $primarySlugs = [];
+        $otherSlugs = [];
+        foreach ($this->getSlugsInTreeOrder($docData) as $slug) {
+            $docDatum = $docData[$slug];
+            if (!$docDatum['hasContent']) {
+                continue;
+            }
+            $primaryFor = $this->normaliseClassNames($docDatum['frontMatter']['primary_for'] ?? []);
+            foreach (array_keys($this->getDocClasses($docDatum)) as $class) {
+                if (isset($primaryFor[$class])) {
+                    $primarySlugs[$class][] = $slug;
+                } else {
+                    $otherSlugs[$class][] = $slug;
+                }
+            }
+        }
+        $classMap = [];
+        foreach (array_keys($primarySlugs + $otherSlugs) as $class) {
+            $classMap[$class] = [...($primarySlugs[$class] ?? []), ...($otherSlugs[$class] ?? [])];
+        }
+        $this->localisedClassMap[$key] = $classMap;
+        return $classMap;
+    }
+
+    /**
+     * Get the classes that a doc names in the "classes" key of its frontmatter,
+     * including classes that its extensions add.
+     * Names that aren't the name of a class are left out, because docs can be for classes from modules
+     * that aren't installed.
+     *
+     * @param array $docDatum Doc data from getLocalisedDocData() or getDocData()
+     * @return string[] Class names keyed by lowercase class name
+     */
+    public function getDocClasses(array $docDatum): array
+    {
+        $classes = $this->normaliseClassNames($docDatum['frontMatter']['classes'] ?? []);
+        foreach ($docDatum['extensions'] ?? [] as $extension) {
+            $classes += $this->normaliseClassNames($extension['frontMatter']['classes'] ?? []);
+        }
+        return $classes;
+    }
+
+    /**
      * Get the URL slug for the given documentation file/folder path.
      * The slug for an index file with no directory, such as "index.md", is ".".
      */
@@ -736,6 +801,167 @@ class UserDocsManifest implements Flushable
     private function isRootWithoutIndex(array $docDatum): bool
     {
         return !$docDatum['isIndex'] && !str_contains($docDatum['slug'], '/');
+    }
+
+    /**
+     * Get the class names from a frontmatter value, which can be one class name or a list of them.
+     * Names that aren't the name of a class are left out.
+     *
+     * @return string[] Class names keyed by lowercase class name
+     */
+    private function normaliseClassNames(mixed $value): array
+    {
+        if (is_string($value)) {
+            $value = [$value];
+        }
+        if (!is_array($value)) {
+            return [];
+        }
+        $classes = [];
+        foreach ($value as $className) {
+            // Check the manifest instead of autoloading, so a name never loads a file
+            if (!is_string($className) || !ClassInfo::exists($className)) {
+                continue;
+            }
+            // This also removes a leading backslash and corrects the case
+            $className = ClassInfo::class_name($className);
+            $classes[strtolower($className)] = $className;
+        }
+        return $classes;
+    }
+
+    /**
+     * Get the slugs of the docs in the order they're shown in the navigation tree.
+     * Docs that aren't in the tree come last.
+     *
+     * @param array $docData Doc data keyed by slug, sorted by sortDocData()
+     * @return string[]
+     */
+    private function getSlugsInTreeOrder(array $docData): array
+    {
+        $roots = [];
+        $childrenByParent = [];
+        foreach ($docData as $slug => $docDatum) {
+            // PHP makes numeric slugs like "2024" into int array keys
+            $slug = (string) $slug;
+            if ($docDatum['parentSlug'] === null) {
+                $roots[] = $slug;
+            } else {
+                $childrenByParent[$docDatum['parentSlug']][] = $slug;
+            }
+        }
+        $slugs = [];
+        foreach ($roots as $root) {
+            $this->addSlugsInTreeOrder($root, $childrenByParent, $slugs);
+        }
+        // A doc whose parent has no doc data isn't in the tree
+        foreach (array_keys($docData) as $slug) {
+            $slugs[(string) $slug] ??= (string) $slug;
+        }
+        return array_values($slugs);
+    }
+
+    /**
+     * Add the slug and the slugs of its descendants to the list, in the order they're shown in the navigation tree.
+     *
+     * @param array $childrenByParent Lists of child slugs keyed by parent slug
+     * @param string[] $slugs The list to add to, keyed by slug
+     */
+    private function addSlugsInTreeOrder(string $slug, array $childrenByParent, array &$slugs): void
+    {
+        $slugs[$slug] = $slug;
+        foreach ($childrenByParent[$slug] ?? [] as $childSlug) {
+            $this->addSlugsInTreeOrder($childSlug, $childrenByParent, $slugs);
+        }
+    }
+
+    /**
+     * Get the files in the given locales for each slug, in order of precedence.
+     * Files from a higher priority module come first. Files from the same module are in the order of the locales.
+     *
+     * @param string[] $locales Locales in order of precedence
+     * @return array Lists of files keyed by slug, then lists of extension files keyed by slug and extension key
+     */
+    private function getDocFiles(array $locales): array
+    {
+        $pageFiles = [];
+        $extensionFiles = [];
+        foreach ($this->docData as $moduleData) {
+            foreach ($locales as $locale) {
+                foreach ($moduleData[$locale] ?? [] as $slug => $docDatum) {
+                    if ($docDatum['isExtension']) {
+                        $extensionFiles[$slug][$docDatum['extensionKey']][] = $docDatum;
+                    } else {
+                        $pageFiles[$slug][] = $docDatum;
+                    }
+                }
+            }
+        }
+        return [$pageFiles, $extensionFiles];
+    }
+
+    /**
+     * Choose which of the files for a slug to use, and fill in the frontmatter it doesn't have from the other files.
+     * The first file is used, unless it's only a placeholder for a root folder without an index.md file.
+     *
+     * @param array $files Files for the same slug in order of precedence, from getDocFiles()
+     * @param string[] $locales The locales that were passed to getDocFiles()
+     */
+    private function chooseDoc(array $files, array $locales): array
+    {
+        $chosen = null;
+        foreach ($files as $file) {
+            if (!$chosen || ($this->isRootWithoutIndex($chosen) && !$this->isRootWithoutIndex($file))) {
+                $chosen = $file;
+            }
+        }
+        return $this->inheritFrontMatter($chosen, $files, $locales);
+    }
+
+    /**
+     * Fill in frontmatter keys that the doc doesn't have from the files it replaces, in order of precedence.
+     * This lets a translation or an override leave out keys that the file it replaces has.
+     * The doc replaces the files after it, except files in a locale that comes before its own locale,
+     * because the doc is only a fallback for those files.
+     * A key that is set, even to an empty value, is never replaced.
+     *
+     * @param array $files Files for the same slug in order of precedence, from getDocFiles()
+     * @param string[] $locales The locales that were passed to getDocFiles()
+     */
+    private function inheritFrontMatter(array $docDatum, array $files, array $locales): array
+    {
+        $frontMatter = is_array($docDatum['frontMatter']) ? $docDatum['frontMatter'] : [];
+        $localeRanks = array_flip(array_values($locales));
+        $docLocaleRank = $localeRanks[$docDatum['locale']];
+        $isAfterDoc = false;
+        $hasChanged = false;
+        foreach ($files as $file) {
+            if ($file['filePath'] === $docDatum['filePath']) {
+                $isAfterDoc = true;
+                continue;
+            }
+            if (
+                !$isAfterDoc
+                || $localeRanks[$file['locale']] < $docLocaleRank
+                || !is_array($file['frontMatter'])
+            ) {
+                continue;
+            }
+            foreach ($file['frontMatter'] as $key => $value) {
+                if (
+                    array_key_exists($key, $frontMatter)
+                    || in_array($key, UserDocsManifest::UNINHERITED_FRONT_MATTER_KEYS, true)
+                ) {
+                    continue;
+                }
+                $frontMatter[$key] = $value;
+                $hasChanged = true;
+            }
+        }
+        if ($hasChanged) {
+            $docDatum['frontMatter'] = $frontMatter;
+        }
+        return $docDatum;
     }
 
     /**
@@ -830,6 +1056,7 @@ class UserDocsManifest implements Flushable
     {
         $this->localisedDocData = [];
         $this->docDataByLocale = null;
+        $this->localisedClassMap = [];
         $success = true;
         foreach ($this->cachedProperties as $property) {
             if (!isset($data[$property]) || !is_array($data[$property])) {
