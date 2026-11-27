@@ -34,11 +34,12 @@ class RelatedDocsExtensionTest extends SapphireTest
     public static function provideAddRelatedDocs(): array
     {
         return [
-            'parent class doc, child docs, and other docs for the same class' => [
+            'parent class doc, parent doc, child docs, and other docs for the same class' => [
                 'slug' => 'pages/specific',
                 // "pages/specific/deeper/grand" names the same class, but it's a descendant
                 'expected' => [
                     'pages/generic',
+                    'pages',
                     'pages/specific/sub',
                     'pages/specific/also_child',
                     'pages/specific/deeper',
@@ -46,10 +47,11 @@ class RelatedDocsExtensionTest extends SapphireTest
                     'tools/off',
                 ],
             ],
-            'ancestors that name the same class are left out' => [
+            'ancestors that name the same class are left out, except the parent doc' => [
                 'slug' => 'pages/specific/deeper/grand',
                 'expected' => [
                     'pages/generic',
+                    'pages/specific/deeper',
                     'pages/specific/also_child',
                     'tools/child_tool',
                     'tools/off',
@@ -60,6 +62,18 @@ class RelatedDocsExtensionTest extends SapphireTest
                 'expected' => [
                     'pages/generic',
                     'pages/specific',
+                ],
+            ],
+            'parent doc only' => [
+                'slug' => 'pages/specific/sub',
+                'expected' => [
+                    'pages/specific',
+                ],
+            ],
+            'parent doc with a slug of 0' => [
+                'slug' => '0/child',
+                'expected' => [
+                    '0',
                 ],
             ],
         ];
@@ -78,8 +92,8 @@ class RelatedDocsExtensionTest extends SapphireTest
     public static function provideAddRelatedDocsWithoutLinks(): array
     {
         return [
-            'no related docs' => [
-                'slug' => 'pages/specific/sub',
+            'parent doc without content' => [
+                'slug' => 'no_content/child',
             ],
             'turned off in the frontmatter' => [
                 'slug' => 'tools/off',
@@ -145,12 +159,12 @@ class RelatedDocsExtensionTest extends SapphireTest
             'extension content is moved into the doc' => [
                 'slug' => 'section/moved',
                 'expectedContent' => ['Intro.', 'Inserted content.', 'Original content.'],
-                'expectedLinks' => ['section/removed'],
+                'expectedLinks' => ['section', 'section/removed'],
             ],
             'extension content is removed because its place is missing' => [
                 'slug' => 'section/removed',
                 'expectedContent' => ['Original content.'],
-                'expectedLinks' => ['section/moved'],
+                'expectedLinks' => ['section', 'section/moved'],
             ],
         ];
     }

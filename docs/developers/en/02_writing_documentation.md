@@ -118,6 +118,7 @@ A class in `primary_for` only has an effect if the page also names it in `classe
 A "Related docs" heading and a list of links are added to the end of each page. The list has links to:
 
 - For each class that the page names, the [main page](#main-page-for-a-class) for the nearest ancestor class that a page names. For example, if a page names `App\PageTypes\NewsPage` and no page names its parent class `Page`, the link goes to the main page for `SiteTree`.
+- The parent page of the page.
 - The child pages of the page.
 - Other pages that name one of the same classes, except pages that contain this page or are inside it in the navigation tree. Main pages come first.
 
