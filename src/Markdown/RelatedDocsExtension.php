@@ -22,8 +22,9 @@ use SilverStripe\UserDocs\Admin\UserDocsManifest;
  *
  * The links go to:
  *   - the doc for the nearest parent class of each class that the doc names
+ *   - the parent doc of the doc
  *   - the child docs of the doc
- *   - other docs that name the same classes, except ancestors and descendants of the doc
+ *   - other docs that name the same classes, except other ancestors and descendants of the doc
  *
  * Set "related_docs: false" in the frontmatter of a doc to leave out the links.
  */
@@ -112,17 +113,24 @@ class RelatedDocsExtension implements ExtensionInterface
         $slug = (string) $this->docData['slug'];
         $classes = $manifest->getDocClasses($this->docData);
         $related = [];
+        // get main page for parent class
         foreach ($classes as $class) {
             $parentClassSlug = $resolver->getSlugForParentClass($class);
             if ($parentClassSlug !== null) {
                 $related[] = $parentClassSlug;
             }
         }
+        // get parent page
+        if ($this->docData['parentSlug'] !== null) {
+            $related[] = (string) $this->docData['parentSlug'];
+        }
+        // get child pages
         foreach ($allDocData as $docDatum) {
             if ($docDatum['parentSlug'] === $slug) {
                 $related[] = (string) $docDatum['slug'];
             }
         }
+        // get related pages for doc classes
         foreach ($classes as $class) {
             foreach ($resolver->getSlugsForClass($class) as $classSlug) {
                 if (!str_starts_with($classSlug, "$slug/") && !str_starts_with($slug, "$classSlug/")) {

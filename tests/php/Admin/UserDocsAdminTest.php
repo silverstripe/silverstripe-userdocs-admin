@@ -390,7 +390,7 @@ class UserDocsAdminTest extends FunctionalTest
         preg_match('#<nav class="toc-container".*?</nav>#s', $html, $tableOfContents);
         // The original and the extension both have a "Notes" heading, but each needs its own ID
         $contentHtml = str_replace($tableOfContents[0], '', $html);
-        preg_match_all('#<h2 id="([^"]+)"#', $contentHtml, $matches);
+        preg_match_all('#<h2 id="(?!userdocs-related-docs")([^"]+)"#', $contentHtml, $matches);
         $headingIds = $matches[1];
         $this->assertCount(2, $headingIds);
         $this->assertSame($headingIds, array_values(array_unique($headingIds)));
